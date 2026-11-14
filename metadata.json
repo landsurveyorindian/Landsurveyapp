@@ -1,0 +1,6 @@
+{
+  "name": "Sthal Measure",
+  "description": "Mobile-first GIS & land surveying app with Indian state land units, Bhuvan WMS maps, traverse sheets, CAD/Shapefile plotting, and verified marketplace.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

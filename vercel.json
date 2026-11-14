@@ -1,0 +1,48 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/bhuvan-tile/:z/:x/:y",
+      "destination": "/api/bhuvan-tile?z=:z&x=:x&y=:y"
+    },
+    {
+      "source": "/api/bhuvan-cadastral/:z/:x/:y",
+      "destination": "/api/bhuvan-cadastral?z=:z&x=:x&y=:y"
+    },
+    {
+      "source": "/api/bhuvan-cadastral",
+      "destination": "/api/bhuvan-cadastral"
+    },
+    {
+      "source": "/api/bhuvan-proxy",
+      "destination": "/api/bhuvan-proxy"
+    },
+    {
+      "source": "/api/gemini/:action",
+      "destination": "/api/gemini?action=:action"
+    },
+    {
+      "source": "/api/gemini",
+      "destination": "/api/gemini"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Permissions-Policy",
+          "value": "geolocation=*"
+        },
+        {
+          "key": "Access-Control-Allow-Origin",
+          "value": "https://ais-dev-vmo4nus7oc3syjyfbrofla-938723057487.asia-southeast1.run.app"
+        }
+      ]
+    }
+  ]
+}

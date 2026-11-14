@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner() {
+      return isSignedIn() && (
+        request.auth.token.role == 'owner' ||
+        request.auth.token.owner == true ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner')
+      );
+    }
+
+    function isDeveloper() {
+      return isSignedIn() && (
+        isOwner() ||
+        request.auth.token.role == 'developer' ||
+        request.auth.token.developer == true ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'developer')
+      );
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSurveyProject(data) {
+      return data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.name is string &&
+             data.name.size() > 0 &&
+             data.name.size() <= 150 &&
+             data.state is string;
+    }
+
+    function isValidMarketListing(data) {
+      return data.userId is string &&
+             data.userId == request.auth.uid &&
+             data.title is string &&
+             data.title.size() > 0 &&
+             data.title.size() <= 200 &&
+             data.state is string &&
+             data.areaCents is number &&
+             data.priceInr is number;
+    }
+
+    // User profiles - Authoritative role and status
+    match /users/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isDeveloper());
+      allow list: if isDeveloper();
+      allow create: if isSignedIn() && 
+                    request.auth.uid == userId && 
+                    (request.resource.data.role == 'user' || isOwner());
+      allow update: if isSignedIn() && (
+        (request.auth.uid == userId && 
+         request.resource.data.role == resource.data.role && 
+         request.resource.data.status == resource.data.status) || 
+        isOwner()
+      );
+      allow delete: if isOwner() && resource.data.role != 'owner';
+    }
+
+    // Developer invitations - Managed exclusively by Super Admin Owner
+    match /developer_invitations/{invitationId} {
+      allow read, write: if isOwner();
+    }
+
+    // Audit logs - Immutable record of administrative events (backend-only writes)
+    match /audit_logs/{logId} {
+      allow read: if isOwner();
+      allow write: if false;
+    }
+
+    // System settings & announcements - Public read, Owner write
+    match /system_settings/{settingId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    // Tutorial videos catalog & stream metadata - Public read, Owner write
+    match /tutorial_videos/{episodeId} {
+      allow read: if true;
+      allow write: if isOwner();
+    }
+
+    // Individual user feature permissions - Self read or Owner read, Owner-only write
+    match /user_feature_permissions/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isOwner());
+      allow write: if isOwner();
+    }
+
+    // Bug reports - User submit, Developer & Owner triage
+    match /bug_reports/{reportId} {
+      allow create: if isSignedIn();
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isDeveloper());
+      allow update: if isDeveloper();
+      allow delete: if isOwner();
+    }
+
+    // Survey projects - Private to owner surveyor, Owner can access for support
+    match /survey_projects/{projectId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+      allow create: if isSignedIn() && 
+                    isValidId(projectId) && 
+                    isValidSurveyProject(request.resource.data);
+      allow update: if isSignedIn() && 
+                    resource.data.userId == request.auth.uid && 
+                    request.resource.data.userId == resource.data.userId &&
+                    isValidSurveyProject(request.resource.data);
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+    }
+
+    // Market listings - Publicly readable, owner editable, strictly prevent self-verification
+    match /market_listings/{listingId} {
+      allow read: if true;
+      allow create: if isSignedIn() && 
+                    isValidId(listingId) && 
+                    isValidMarketListing(request.resource.data) &&
+                    request.resource.data.verified == false &&
+                    (
+                      !('verificationStatus' in request.resource.data) ||
+                      request.resource.data.verificationStatus == 'unverified' || 
+                      request.resource.data.verificationStatus == 'UNVERIFIED' ||
+                      request.resource.data.verificationStatus == 'pending' ||
+                      request.resource.data.verificationStatus == 'SUBMITTED'
+                    );
+      allow update: if isSignedIn() && (
+        (resource.data.userId == request.auth.uid && 
+         request.resource.data.userId == resource.data.userId &&
+         isValidMarketListing(request.resource.data) &&
+         request.resource.data.verified == resource.data.verified &&
+         request.resource.data.verificationStatus == resource.data.verificationStatus) ||
+        isOwner()
+      );
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+    }
+
+    // Private seller data - Strictly restricted to the listing owner and Super Admin Owner
+    match /market_seller_data/{listingId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+      allow create: if isSignedIn() && 
+                    isValidId(listingId) && 
+                    request.resource.data.userId == request.auth.uid;
+      allow update: if isSignedIn() && (
+        (resource.data.userId == request.auth.uid && 
+         request.resource.data.userId == resource.data.userId) ||
+        isOwner()
+      );
+      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+    }
+  }
+}

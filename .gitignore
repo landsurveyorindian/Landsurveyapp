@@ -1,0 +1,20 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Debug and test tile images
+hit_*.png
+test_tile.*
+debug_tile_*
+tile_z*.*
+north_tile.*
+returned_tile.*
+vijayawada_hybrid.*
+bhuvan_real_tile.*
+pinakadimi_cadastral.*
+*.tile.png
