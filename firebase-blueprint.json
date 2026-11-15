@@ -2,264 +2,283 @@
   "entities": {
     "SurveyProject": {
       "title": "SurveyProject",
-      "description": "User land survey project containing calculations, traverse sheets, and polygon measurements.",
+      "description": "User land survey project containing calculations, traverse sheets, CAD sketches, or GPS boundary measurements.",
       "type": "object",
       "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Firebase Auth UID of the owner surveyor."
-        },
-        "name": {
-          "type": "string",
-          "description": "Name or title of the survey parcel / project.",
-          "maxLength": 150
-        },
-        "state": {
-          "type": "string",
-          "description": "Indian state of survey jurisdiction (e.g. Andhra Pradesh, Telangana)."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "ISO timestamp or server timestamp string of creation."
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "ISO timestamp or server timestamp string of update."
-        },
-        "calculations": {
-          "type": "object",
-          "description": "4-sided or 5-sided triangulation calculator data."
-        },
-        "traverse": {
-          "type": "object",
-          "description": "Closed traverse station records, Bowditch adjustment, and closing error."
-        },
-        "polygon": {
-          "type": "object",
-          "description": "GeoJSON or boundary coordinate records."
-        },
-        "notes": {
-          "type": "string",
-          "description": "Field notes, village boundary, or surveyor remarks.",
-          "maxLength": 1000
-        }
+        "userId": { "type": "string" },
+        "name": { "type": "string", "maxLength": 150 },
+        "state": { "type": "string", "maxLength": 80 },
+        "parcelType": { "type": "string", "enum": ["four_sided", "five_sided", "triangle", "traverse", "cad", "gps_walk", "converter"] },
+        "areaSqm": { "type": "number" },
+        "areaSqFt": { "type": "number" },
+        "areaSqYards": { "type": "number" },
+        "areaAcres": { "type": "number" },
+        "areaCents": { "type": "number" },
+        "perimeterMeters": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "summaryJson": { "type": "string", "maxLength": 32768 },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
       },
-      "required": ["userId", "name", "state"]
+      "required": ["userId", "name", "state", "parcelType", "areaSqm", "createdAt", "updatedAt"]
     },
     "MarketListing": {
       "title": "MarketListing",
-      "description": "Verified land / plot listing for sale published by a verified surveyor or owner.",
-      "type": "object",
-      "properties": {
-        "userId": {
-          "type": "string",
-          "description": "Firebase Auth UID of the publisher."
-        },
-        "userEmail": {
-          "type": "string",
-          "description": "Email of the publisher."
-        },
-        "title": {
-          "type": "string",
-          "description": "Title of the land listing.",
-          "maxLength": 200
-        },
-        "state": {
-          "type": "string",
-          "description": "Indian State where the plot is located."
-        },
-        "district": {
-          "type": "string",
-          "description": "District or Mandal name."
-        },
-        "surveyNo": {
-          "type": "string",
-          "description": "Official Revenue Survey Number or LP Number."
-        },
-        "areaCents": {
-          "type": "number",
-          "description": "Plot area in Cents."
-        },
-        "areaSqYards": {
-          "type": "number",
-          "description": "Plot area in Square Yards."
-        },
-        "areaAcres": {
-          "type": "number",
-          "description": "Plot area in Acres."
-        },
-        "priceInr": {
-          "type": "number",
-          "description": "Listing price in Indian Rupees."
-        },
-        "sellerName": {
-          "type": "string",
-          "description": "Contact person name."
-        },
-        "sellerContact": {
-          "type": "string",
-          "description": "Phone number or WhatsApp contact."
-        },
-        "lat": {
-          "type": "number",
-          "description": "Latitude of plot center."
-        },
-        "lng": {
-          "type": "number",
-          "description": "Longitude of plot center."
-        },
-        "boundaryGeoJson": {
-          "type": "string",
-          "description": "Stringified GeoJSON feature of the surveyed polygon boundary."
-        },
-        "verified": {
-          "type": "boolean",
-          "description": "Whether this plot has been survey-verified."
-        },
-        "createdAt": {
-          "type": "string",
-          "description": "Creation timestamp."
-        },
-        "updatedAt": {
-          "type": "string",
-          "description": "Update timestamp."
-        }
-      },
-      "required": ["userId", "title", "state", "areaCents", "priceInr", "sellerContact"]
-    },
-    "UserProfile": {
-      "title": "UserProfile",
-      "description": "Authenticated user profile with authoritative role and account status.",
-      "type": "object",
-      "properties": {
-        "uid": { "type": "string" },
-        "email": { "type": "string" },
-        "displayName": { "type": "string" },
-        "role": { "type": "string", "enum": ["owner", "developer", "user"] },
-        "status": { "type": "string", "enum": ["active", "suspended"] },
-        "photoURL": { "type": "string" },
-        "licenseNumber": { "type": "string" },
-        "phone": { "type": "string" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" },
-        "lastLoginAt": { "type": "string" }
-      },
-      "required": ["uid", "email", "role", "status"]
-    },
-    "DeveloperInvitation": {
-      "title": "DeveloperInvitation",
-      "description": "Owner invitation for technical administrators with secure tokens.",
-      "type": "object",
-      "properties": {
-        "email": { "type": "string" },
-        "token": { "type": "string" },
-        "invitedByEmail": { "type": "string" },
-        "invitedByUid": { "type": "string" },
-        "createdAt": { "type": "string" },
-        "expiresAt": { "type": "string" },
-        "status": { "type": "string", "enum": ["pending", "accepted", "revoked"] }
-      },
-      "required": ["email", "token", "status"]
-    },
-    "AuditLog": {
-      "title": "AuditLog",
-      "description": "Immutable audit record of sensitive administrative actions.",
-      "type": "object",
-      "properties": {
-        "timestamp": { "type": "string" },
-        "actorUid": { "type": "string" },
-        "actorEmail": { "type": "string" },
-        "actorRole": { "type": "string" },
-        "action": { "type": "string" },
-        "targetType": { "type": "string" },
-        "targetId": { "type": "string" },
-        "details": { "type": "object" },
-        "result": { "type": "string", "enum": ["success", "failure"] },
-        "ip": { "type": "string" }
-      },
-      "required": ["timestamp", "actorUid", "actorEmail", "action", "targetType", "targetId", "result"]
-    },
-    "SystemSetting": {
-      "title": "SystemSetting",
-      "description": "System-wide announcements and operational feature flags.",
-      "type": "object",
-      "properties": {
-        "announcement": { "type": "object" },
-        "featureFlags": { "type": "object" },
-        "maintenanceMode": { "type": "boolean" },
-        "updatedAt": { "type": "string" },
-        "updatedBy": { "type": "string" }
-      },
-      "required": ["announcement", "featureFlags", "updatedAt"]
-    },
-    "BugReport": {
-      "title": "BugReport",
-      "description": "User-reported issue or defect triaged by Developers and Owner.",
+      "description": "Land parcel listing on the Sthal Measure marketplace.",
       "type": "object",
       "properties": {
         "userId": { "type": "string" },
-        "userEmail": { "type": "string" },
-        "userName": { "type": "string" },
-        "title": { "type": "string" },
-        "description": { "type": "string" },
-        "module": { "type": "string" },
-        "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
-        "status": { "type": "string", "enum": ["new", "investigating", "resolved", "closed"] },
-        "technicalNotes": { "type": "string" },
-        "browserInfo": { "type": "string" },
-        "createdAt": { "type": "string" },
-        "updatedAt": { "type": "string" }
+        "title": { "type": "string", "maxLength": 200 },
+        "state": { "type": "string", "maxLength": 80 },
+        "district": { "type": "string", "maxLength": 100 },
+        "surveyNo": { "type": "string", "maxLength": 80 },
+        "areaCents": { "type": "number" },
+        "areaSqYards": { "type": "number" },
+        "areaAcres": { "type": "number" },
+        "priceInr": { "type": "number" },
+        "sellerName": { "type": "string", "maxLength": 100 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "boundaryGeoJson": { "type": "string", "maxLength": 32768 },
+        "photoUri": { "type": "string", "maxLength": 500 },
+        "verified": { "type": "boolean" },
+        "verificationStatus": { "type": "string", "enum": ["unverified", "pending", "verified", "rejected"] },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
       },
-      "required": ["userId", "title", "description", "module", "severity", "status"]
+      "required": ["userId", "title", "state", "areaCents", "priceInr", "verified", "verificationStatus", "createdAt", "updatedAt"]
     },
     "PrivateSellerData": {
       "title": "PrivateSellerData",
-      "description": "Sensitive seller contact and identity information protected from public queries.",
+      "description": "Private seller phone and email restricted to the listing owner and Super Admin Owner.",
+      "type": "object",
+      "properties": {
+        "listingId": { "type": "string", "maxLength": 128 },
+        "userId": { "type": "string" },
+        "sellerName": { "type": "string", "maxLength": 100 },
+        "sellerEmail": { "type": "string", "maxLength": 160 },
+        "sellerPhone": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
+      },
+      "required": ["listingId", "userId", "sellerPhone", "createdAt", "updatedAt"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated surveyor user profile with role and preferred Indian state.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "maxLength": 160 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["owner", "developer", "user"] },
+        "status": { "type": "string", "enum": ["active", "suspended"] },
+        "photoUrl": { "type": "string", "maxLength": 500 },
+        "preferredState": { "type": "string", "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
+      },
+      "required": ["uid", "email", "role", "status", "createdAt", "updatedAt"]
+    },
+    "DeveloperEmail": {
+      "title": "DeveloperEmail",
+      "description": "Owner-managed allowlist mapping verified email IDs to Developer Dashboard access.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "maxLength": 160 },
+        "label": { "type": "string", "maxLength": 100 },
+        "active": { "type": "boolean" },
+        "addedByUid": { "type": "string" },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
+      },
+      "required": ["email", "label", "active", "addedByUid", "createdAt", "updatedAt"]
+    },
+    "BugReport": {
+      "title": "BugReport",
+      "description": "User bug report triaged by developers and owner.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string", "maxLength": 160 },
+        "userName": { "type": "string", "maxLength": 120 },
+        "title": { "type": "string", "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "module": { "type": "string", "maxLength": 80 },
+        "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+        "status": { "type": "string", "enum": ["new", "investigating", "resolved", "closed"] },
+        "appVersion": { "type": "string", "maxLength": 32 },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
+      },
+      "required": ["userId", "title", "description", "module", "severity", "status", "createdAt", "updatedAt"]
+    },
+    "SystemSetting": {
+      "title": "SystemSetting",
+      "description": "Owner-controlled global kill switches, per-group permission maps, maintenance banner, and announcements.",
+      "type": "object",
+      "properties": {
+        "announcementTitle": { "type": "string", "maxLength": 200 },
+        "announcementMessage": { "type": "string", "maxLength": 1000 },
+        "maintenanceMode": { "type": "boolean" },
+        "calculatorEnabled": { "type": "boolean" },
+        "cadStudioEnabled": { "type": "boolean" },
+        "gpsWalkEnabled": { "type": "boolean" },
+        "gisImportExportEnabled": { "type": "boolean" },
+        "pdfReportsEnabled": { "type": "boolean" },
+        "marketplaceEnabled": { "type": "boolean" },
+        "aiAdvisorEnabled": { "type": "boolean" },
+        "documentScannerEnabled": { "type": "boolean" },
+        "academyEnabled": { "type": "boolean" },
+        "userGroupPermissions": { "type": "object" },
+        "developerGroupPermissions": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
+      },
+      "required": [
+        "announcementTitle",
+        "announcementMessage",
+        "maintenanceMode",
+        "calculatorEnabled",
+        "cadStudioEnabled",
+        "gpsWalkEnabled",
+        "gisImportExportEnabled",
+        "marketplaceEnabled",
+        "aiAdvisorEnabled",
+        "documentScannerEnabled",
+        "academyEnabled",
+        "updatedAt"
+      ]
+    },
+    "UserFeaturePermissions": {
+      "title": "UserFeaturePermissions",
+      "description": "Per-account feature permission map keyed by Firebase Auth uid.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "maxLength": 160 },
+        "username": { "type": "string", "maxLength": 120 },
+        "role": { "type": "string", "enum": ["owner", "developer", "user"] },
+        "permissions": { "type": "object" },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" },
+        "updatedBy": { "type": "string" },
+        "version": { "type": "integer" }
+      },
+      "required": ["uid", "email", "role", "permissions", "createdAt", "updatedAt", "updatedBy", "version"]
+    },
+    "PermissionAuditLog": {
+      "title": "PermissionAuditLog",
+      "description": "Immutable history of Owner feature permission edits per account.",
+      "type": "object",
+      "properties": {
+        "targetUid": { "type": "string" },
+        "targetEmail": { "type": "string" },
+        "action": { "type": "string", "enum": ["create", "update", "restore_defaults"] },
+        "changesSummary": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "updatedByEmail": { "type": "string" },
+        "createdAt": { "type": "string", "format": "timestamp" }
+      },
+      "required": ["targetUid", "action", "updatedBy", "createdAt"]
+    },
+    "AcademyVideoEntry": {
+      "title": "AcademyVideoEntry",
+      "description": "Owner-managed episode metadata and video stream URLs.",
+      "type": "object",
+      "properties": {
+        "episodeNumber": { "type": "integer" },
+        "title": { "type": "string" },
+        "difficulty": { "type": "string", "enum": ["Beginner", "Intermediate", "Advanced"] },
+        "videoUrl": { "type": "string" },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
+      },
+      "required": ["episodeNumber", "title", "difficulty", "videoUrl", "updatedBy", "updatedAt"]
+    },
+    "ListingReport": {
+      "title": "ListingReport",
+      "description": "Marketplace listing abuse/inaccuracy report.",
       "type": "object",
       "properties": {
         "listingId": { "type": "string" },
-        "userId": { "type": "string" },
-        "sellerName": { "type": "string" },
-        "sellerEmail": { "type": "string" },
-        "sellerPhone": { "type": "string" },
-        "identityDocs": { "type": "array" },
-        "internalNotes": { "type": "string" }
+        "listingTitle": { "type": "string" },
+        "reporterUid": { "type": "string" },
+        "reporterEmail": { "type": "string" },
+        "reason": { "type": "string" },
+        "details": { "type": "string" },
+        "status": { "type": "string", "enum": ["open", "reviewed", "dismissed"] },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
       },
-      "required": ["listingId", "userId"]
+      "required": ["listingId", "reporterUid", "reason", "status", "createdAt", "updatedAt"]
+    },
+    "MarketInquiry": {
+      "title": "MarketInquiry",
+      "description": "Buyer-to-seller contact inquiry without exposing private seller phone/email.",
+      "type": "object",
+      "properties": {
+        "listingId": { "type": "string" },
+        "listingTitle": { "type": "string" },
+        "sellerUid": { "type": "string" },
+        "buyerUid": { "type": "string" },
+        "buyerName": { "type": "string" },
+        "buyerPhone": { "type": "string" },
+        "message": { "type": "string" },
+        "status": { "type": "string", "enum": ["sent", "acknowledged"] },
+        "createdAt": { "type": "string", "format": "timestamp" },
+        "updatedAt": { "type": "string", "format": "timestamp" }
+      },
+      "required": ["listingId", "sellerUid", "buyerUid", "buyerName", "buyerPhone", "status", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
     "/survey_projects/{projectId}": {
       "schema": "SurveyProject",
-      "description": "Private survey projects collection accessible only by the owner userId."
+      "description": "Private survey projects accessible strictly to owner userId (and Super Admin Owner)."
     },
     "/market_listings/{listingId}": {
       "schema": "MarketListing",
-      "description": "Publicly readable marketplace listings for verified plots, writable only by owner userId."
+      "description": "Publicly readable non-PII land listings; owners cannot self-verify."
     },
     "/market_seller_data/{listingId}": {
       "schema": "PrivateSellerData",
-      "description": "Protected private seller contact and identity records accessible strictly to the listing owner and Super Admin Owner."
+      "description": "Private seller phone and email restricted to owner userId and Super Admin Owner."
+    },
+    "/listing_reports/{reportId}": {
+      "schema": "ListingReport",
+      "description": "Marketplace moderation flags readable by reporter, developer, and owner."
+    },
+    "/market_inquiries/{inquiryId}": {
+      "schema": "MarketInquiry",
+      "description": "Safe buyer inquiries visible to buyer, listing owner, and Super Admin Owner."
     },
     "/users/{userId}": {
       "schema": "UserProfile",
-      "description": "User profiles with role and status, writable only by authorized admin or self (non-role fields)."
+      "description": "Surveyor user profiles with role protection."
     },
-    "/developer_invitations/{invitationId}": {
-      "schema": "DeveloperInvitation",
-      "description": "Developer invitations managed exclusively by the Super Admin Owner."
-    },
-    "/audit_logs/{logId}": {
-      "schema": "AuditLog",
-      "description": "Immutable security and administrative audit trail accessible only to Owner."
+    "/developer_emails/{emailId}": {
+      "schema": "DeveloperEmail",
+      "description": "Owner-managed developer email allowlist recognizing authorized developer email IDs."
     },
     "/system_settings/{settingId}": {
       "schema": "SystemSetting",
-      "description": "System-wide announcement banners and feature flags."
+      "description": "Global feature controls, role-group flags, and announcements writable only by Owner."
+    },
+    "/userFeaturePermissions/{userId}": {
+      "schema": "UserFeaturePermissions",
+      "description": "Individual per-user feature permissions managed exclusively by Owner."
+    },
+    "/permissionAuditLogs/{logId}": {
+      "schema": "PermissionAuditLog",
+      "description": "Immutable permission change log writable and readable only by Owner."
+    },
+    "/academy_videos/{videoId}": {
+      "schema": "AcademyVideoEntry",
+      "description": "Academy episode stream configuration managed by Owner."
     },
     "/bug_reports/{reportId}": {
       "schema": "BugReport",
-      "description": "User bug reports accessible to creator, Developers, and Owner."
+      "description": "User-submitted bug reports accessible to creator and triage staff."
     }
   }
 }

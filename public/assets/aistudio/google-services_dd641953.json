@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "423393024033",
+    "project_id": "refined-period-j3kqt",
+    "storage_bucket": "refined-period-j3kqt.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:423393024033:android:552f15074d44c4dea3ab60",
+        "android_client_info": {
+          "package_name": "com.sthalmeasure.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "423393024033-f1qq7p8jpgrddspvct9rs5ptjiudt12m.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.sthalmeasure.app",
+            "certificate_hash": "47da1a5176e96e3aa2888eda6f668278d94de343"
+          }
+        },
+        {
+          "client_id": "423393024033-76voi4scplilk78m971lr9mb74o497ea.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDESkhz6KEVqA0pq0mz2E7aPViKiVRZ6aY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "423393024033-76voi4scplilk78m971lr9mb74o497ea.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

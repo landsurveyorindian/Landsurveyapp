@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Sthal Measure</string>
+    <string name="tagline">All-India Land Surveying &amp; Cadastral GIS</string>
+    <string name="sign_in_google">Sign In with Google</string>
+    <string name="register_google">Register with Google</string>
+    <string name="login_title">Welcome Back</string>
+    <string name="login_subtitle">Sign in to access your Survey Vault, CAD sketches, and Marketplace listings.</string>
+    <string name="register_title">Create Account</string>
+    <string name="register_subtitle">Set up your surveyor profile and regional unit jurisdiction before registering.</string>
+    <string name="complete_registration_title">Complete Registration</string>
+    <string name="complete_registration_subtitle">Confirm your surveyor name and home state to initialize your cloud vault.</string>
+    <string name="sign_out">Sign Out</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_calc">Calculator</string>
+    <string name="nav_cad">CAD Studio</string>
+    <string name="nav_gps">GPS Walk</string>
+    <string name="nav_gis">GIS I/O</string>
+    <string name="nav_projects">Projects</string>
+    <string name="nav_market">Market</string>
+    <string name="ai_advisor">AI Plot Advisor</string>
+    <string name="doc_scanner">Document Scanner</string>
+    <string name="academy_title">18-Episode Academy</string>
+    <string name="bug_report">Report Issue</string>
+</resources>

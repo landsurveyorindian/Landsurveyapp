@@ -1,42 +1,32 @@
-# Sthal Measure (స్థల్ మెజర్) - Smart Land Measurement & Cadastral GIS Platform
+# Sthal Measure (Android)
 
-A professional land survey, cadastral GIS, and plot area calculation platform built for Indian landowners, licensed surveyors, civil engineers, and revenue patwaris.
+Native **Kotlin + Jetpack Compose** GIS and land surveying application for Indian landowners, licensed surveyors, civil engineers, and revenue officials.
 
-## Node.js & Runtime Requirements
-- **Node.js**: `>= 22.0.0` (Node 22 LTS or Node 24+ recommended)
-- Firebase `^13.0.0` requires Node.js runtime `>= 22.0.0`.
+## Key Features
+- **36 States & UTs Unit Catalog & Converter**: Accurate bidirectional conversion across Cents, Guntas, Pucca/Kacha Bigha, Kanal, Marla, Ground, Ankanam, Square Yards, Square Feet, Acres, and Hectares.
+- **Field Triangulation & Traverse Calculator**:
+  - 4-Sided Plots with Measured Diagonal (Heron split + vertex plot preview)
+  - 4-Sided Plots without Diagonal (Brahmagupta cyclic upper bound vs. Patwari average comparison)
+  - 3-Sided Triangles (Heron formula)
+  - Hissa Co-Owner Fractional Partitioning
+  - Bowditch Closed Traverse Sheet with misclosure adjustment and relative precision grading
+- **CAD Drafting Studio**: COGO bearing/distance plotting, building setback buffer polygon, ratio split subdivision, and FMB G-Line ladder offsets on an interactive `Canvas`.
+- **GNSS Boundary Walk & UTM Projection**: `FusedLocationProviderClient` GPS tracking with 2D Kalman filtering, static epoch averaging, WGS84-to-UTM coordinate conversion, and automatic Indian state detection.
+- **GIS Import / Export**: System Storage Access Framework (SAF) import and export for AutoCAD `.dxf`, `.geojson`, and `.kml` polygons.
+- **Firebase Cloud Vault, Marketplace & AI Logic**:
+  - Google Sign-In via Jetpack Credential Manager (`GetSignInWithGoogleOption`)
+  - Cloud-synced Survey Vault (`survey_projects`) and Land Marketplace (`market_listings` + owner-only `market_seller_data`) protected by Firebase App Check and zero-trust `firestore.rules`
+  - AI Plot Advisor and structured JSON Land Document Scanner (7/12, ROR, Patta) powered by Firebase AI Logic
+  - 18-Episode Guided Surveying Academy and in-app issue reporting (`bug_reports`)
 
-## Modes
-
-### 1. Simple Mode (Default)
-Tailored for common landowners with zero survey background:
-- **Measure My Land**: GPS perimeter walking with auto-polygon closure and instant acreage in local units (Cents, Guntas, Acres, Bigha).
-- **Calculate Land Area**: 4-sided plots and triangular plots with Heron triangulation and Cyclic approximation.
-- **My Saved Surveys**: Stored projects, certificates, and exportable PDF reports.
-- **Land Marketplace**: Verified land listings with verified survey numbers and revenue documents.
-- **Plain GPS Signal**: "GPS Signal: Good / OK / Poor" status indicator with practical walking advice instead of confusing geodetic jargon.
-- **Advanced / Professional Tools**: Collapsible drawer keeping professional tools neatly organized without cluttering the screen.
-
-### 2. Advanced Mode (For Surveyors & CAD Professionals)
-- **Drafting Studio**: Complete AutoCAD-like drafting suite with Polyline, OSNAP (F3), Ortho mode (F8), coordinate tracking, layer management, and DXF download.
-- **Setbacks & Subdivision**: Building clearance offsets, road widening buffers, and polygon split tools.
-- **COGO (Coordinate Geometry)**: Inverse traverse, bearing & distance calculations, and coordinate station entry.
-- **FMB Ladder**: Field Measurement Book G-Line ladder offset drafting and visualization.
-- **Closed Traverse**: Bowditch balancing, transit rules, and angular closure sheet.
-- **High-Precision GPS Engine**: 2D Kalman filter, stationary epoch averaging, and GCP benchmark calibration.
-- **File Import / Export**: AutoCAD DXF, GIS Shapefile (.shp/.zip), GeoJSON, and Google Earth KML.
-
-## Development & Testing
+## Build & Testing
 ```bash
-# Run unit test suite
-npm test
+# Build Android Debug APK
+gradle assembleDebug
 
-# Run TypeScript linter
-npm run lint
+# Run JS Firestore Security Rules tests (requires Firestore emulator at 127.0.0.1:8085)
+FIRESTORE_EMULATOR_HOST="127.0.0.1:8085" node --test firestore.test.mjs
 
-# Build production bundle
-npm run build
-
-# Start full-stack development server
-npm run dev
+# Run Android unit & Robolectric tests (domain engines, Firestore rule tests, Compose UI tests)
+gradle :app:testDebugUnitTest --rerun-tasks
 ```

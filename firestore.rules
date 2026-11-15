@@ -13,151 +13,521 @@ service cloud.firestore {
 
     function isOwner() {
       return isSignedIn() && (
-        request.auth.token.role == 'owner' ||
-        request.auth.token.owner == true ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'owner')
+        request.auth.token.get('owner', false) == true ||
+        request.auth.token.get('role', '') == 'owner' ||
+        ('email' in request.auth.token &&
+         request.auth.token.email.lower() == 'pavansrirambezawada@gmail.com' &&
+         request.auth.token.get('email_verified', false) == true)
       );
     }
 
     function isDeveloper() {
       return isSignedIn() && (
         isOwner() ||
-        request.auth.token.role == 'developer' ||
-        request.auth.token.developer == true ||
-        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'developer')
+        request.auth.token.get('developer', false) == true ||
+        request.auth.token.get('role', '') == 'developer' ||
+        ('email' in request.auth.token &&
+         request.auth.token.get('email_verified', false) == true &&
+         exists(/databases/$(database)/documents/developer_emails/$(request.auth.token.email.lower())) &&
+         get(/databases/$(database)/documents/developer_emails/$(request.auth.token.email.lower())).data.active == true)
       );
+    }
+
+    function isAccountActive() {
+      return !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != 'suspended';
+    }
+
+    function evalSettingsFeatureOk(isDev, featureKey, globalField, roleDefault) {
+      let hasSettings = exists(/databases/$(database)/documents/system_settings/global);
+      let settings = hasSettings ? get(/databases/$(database)/documents/system_settings/global).data : {};
+      let groupMap = isDev
+        ? settings.get('developerGroupPermissions', {})
+        : settings.get('userGroupPermissions', {});
+      return (isDev || settings.get('maintenanceMode', false) != true) &&
+             (globalField == '' || settings.get(globalField, true) == true) &&
+             (groupMap.get(featureKey, roleDefault) == true);
+    }
+
+    function evalIndividualFeatureOk(featureKey, roleDefault) {
+      let hasInd = exists(/databases/$(database)/documents/userFeaturePermissions/$(request.auth.uid));
+      let indData = hasInd ? get(/databases/$(database)/documents/userFeaturePermissions/$(request.auth.uid)).data : {};
+      return indData.get('permissions', {}).get(featureKey, roleDefault) == true;
+    }
+
+    function evalNonOwnerFeature(featureKey, globalField, defaultUserVal, defaultDevVal) {
+      let isDev = isDeveloper();
+      let roleDefault = isDev ? defaultDevVal : defaultUserVal;
+      return (isDev || featureKey != 'developer_tools') &&
+             evalSettingsFeatureOk(isDev, featureKey, globalField, roleDefault) &&
+             evalIndividualFeatureOk(featureKey, roleDefault);
+    }
+
+    function isFeatureEnabled(featureKey, globalField, defaultUserVal, defaultDevVal) {
+      return isOwner() || (
+        isSignedIn() &&
+        isAccountActive() &&
+        evalNonOwnerFeature(featureKey, globalField, defaultUserVal, defaultDevVal)
+      );
+    }
+
+    function isSurveyFeatureEnabledForType(parcelType) {
+      return parcelType == 'gps_walk'
+        ? isFeatureEnabled('gps_survey', 'gpsWalkEnabled', true, true)
+        : (parcelType == 'cad'
+            ? isFeatureEnabled('cad_tools', 'cadStudioEnabled', true, true)
+            : isFeatureEnabled('plot_measurement', 'calculatorEnabled', true, true));
     }
 
     function isValidId(id) {
       return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidEmailKey(id) {
+      return id is string &&
+             id.size() >= 3 &&
+             id.size() <= 160 &&
+             id == id.lower() &&
+             id.matches('^[a-z0-9._%+\\-]+@[a-z0-9.\\-]+\\.[a-z]{2,}$');
+    }
+
     function isValidSurveyProject(data) {
-      return data.userId is string &&
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'userId', 'name', 'state', 'parcelType',
+               'areaSqm', 'areaSqFt', 'areaSqYards', 'areaAcres', 'areaCents', 'perimeterMeters',
+               'notes', 'summaryJson', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string &&
              data.userId == request.auth.uid &&
              data.name is string &&
              data.name.size() > 0 &&
              data.name.size() <= 150 &&
-             data.state is string;
+             data.state is string &&
+             data.state.size() > 0 &&
+             data.state.size() <= 80 &&
+             data.parcelType is string &&
+             data.parcelType in ['four_sided', 'five_sided', 'triangle', 'traverse', 'cad', 'gps_walk', 'converter'] &&
+             data.areaSqm is number && data.areaSqm >= 0 &&
+             data.areaSqFt is number && data.areaSqFt >= 0 &&
+             data.areaSqYards is number && data.areaSqYards >= 0 &&
+             data.areaAcres is number && data.areaAcres >= 0 &&
+             data.areaCents is number && data.areaCents >= 0 &&
+             data.perimeterMeters is number && data.perimeterMeters >= 0 &&
+             data.notes is string && data.notes.size() <= 1000 &&
+             data.summaryJson is string && data.summaryJson.size() <= 32768 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
     function isValidMarketListing(data) {
-      return data.userId is string &&
-             data.userId == request.auth.uid &&
-             data.title is string &&
-             data.title.size() > 0 &&
-             data.title.size() <= 200 &&
-             data.state is string &&
-             data.areaCents is number &&
-             data.priceInr is number;
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'userId', 'title', 'state', 'district', 'surveyNo',
+               'areaCents', 'areaSqYards', 'areaAcres', 'priceInr',
+               'sellerName', 'lat', 'lng', 'boundaryGeoJson', 'photoUri',
+               'verified', 'verificationStatus', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string &&
+             data.userId.size() > 0 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.state is string && data.state.size() > 0 && data.state.size() <= 80 &&
+             data.district is string && data.district.size() <= 100 &&
+             data.surveyNo is string && data.surveyNo.size() <= 80 &&
+             data.areaCents is number && data.areaCents > 0 &&
+             data.areaSqYards is number && data.areaSqYards >= 0 &&
+             data.areaAcres is number && data.areaAcres >= 0 &&
+             data.priceInr is number && data.priceInr > 0 &&
+             data.sellerName is string && data.sellerName.size() <= 100 &&
+             data.lat is number && data.lat >= -90 && data.lat <= 90 &&
+             data.lng is number && data.lng >= -180 && data.lng <= 180 &&
+             data.boundaryGeoJson is string && data.boundaryGeoJson.size() <= 32768 &&
+             data.photoUri is string && data.photoUri.size() <= 500 &&
+             data.verified is bool &&
+             data.verificationStatus is string &&
+             data.verificationStatus in ['unverified', 'pending', 'verified', 'rejected'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
-    // User profiles - Authoritative role and status
+    function isValidPrivateSellerData(data, listingId) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'listingId', 'userId', 'sellerName', 'sellerEmail', 'sellerPhone', 'createdAt', 'updatedAt'
+             ]) &&
+             data.listingId is string && data.listingId == listingId &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.sellerName is string && data.sellerName.size() <= 100 &&
+             data.sellerEmail is string && data.sellerEmail.size() <= 160 &&
+             data.sellerPhone is string && data.sellerPhone.size() > 0 && data.sellerPhone.size() <= 32 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidListingReport(data) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'listingId', 'listingTitle', 'reporterUid', 'reporterEmail',
+               'reason', 'details', 'status', 'createdAt', 'updatedAt'
+             ]) &&
+             data.listingId is string && data.listingId.size() > 0 && data.listingId.size() <= 128 &&
+             data.listingTitle is string && data.listingTitle.size() <= 200 &&
+             data.reporterUid is string && data.reporterUid.size() > 0 &&
+             data.reporterEmail is string && data.reporterEmail.size() <= 160 &&
+             data.reason is string && data.reason.size() > 0 && data.reason.size() <= 120 &&
+             data.details is string && data.details.size() <= 1000 &&
+             data.status is string && data.status in ['open', 'reviewed', 'dismissed'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidMarketInquiry(data) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'listingId', 'listingTitle', 'sellerUid', 'buyerUid',
+               'buyerName', 'buyerPhone', 'message', 'status', 'createdAt', 'updatedAt'
+             ]) &&
+             data.listingId is string && data.listingId.size() > 0 && data.listingId.size() <= 128 &&
+             data.listingTitle is string && data.listingTitle.size() <= 200 &&
+             data.sellerUid is string && data.sellerUid.size() > 0 && data.sellerUid.size() <= 128 &&
+             data.buyerUid is string && data.buyerUid == request.auth.uid &&
+             data.buyerName is string && data.buyerName.size() > 0 && data.buyerName.size() <= 120 &&
+             data.buyerPhone is string && data.buyerPhone.size() > 0 && data.buyerPhone.size() <= 32 &&
+             data.message is string && data.message.size() <= 1000 &&
+             data.status is string && data.status in ['sent', 'acknowledged'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'uid', 'email', 'displayName', 'role', 'status', 'photoUrl', 'preferredState', 'createdAt', 'updatedAt'
+             ]) &&
+             data.uid is string && data.uid == userId &&
+             data.email is string && data.email.size() <= 160 &&
+             data.displayName is string && data.displayName.size() <= 120 &&
+             data.role is string && data.role in ['owner', 'developer', 'user'] &&
+             data.status is string && data.status in ['active', 'suspended'] &&
+             data.photoUrl is string && data.photoUrl.size() <= 500 &&
+             data.preferredState is string && data.preferredState.size() <= 80 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidDeveloperEmail(data, emailId) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'email', 'label', 'active', 'addedByUid', 'createdAt', 'updatedAt'
+             ]) &&
+             data.email is string && data.email == emailId &&
+             data.label is string && data.label.size() <= 100 &&
+             data.active is bool &&
+             data.addedByUid is string && data.addedByUid == request.auth.uid &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidBugReport(data) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'userId', 'userEmail', 'userName', 'title', 'description',
+               'module', 'severity', 'status', 'appVersion', 'createdAt', 'updatedAt'
+             ]) &&
+             data.userId is string &&
+             data.userEmail is string && data.userEmail.size() <= 160 &&
+             data.userName is string && data.userName.size() <= 120 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             data.description is string && data.description.size() > 0 && data.description.size() <= 2000 &&
+             data.module is string && data.module.size() > 0 && data.module.size() <= 80 &&
+             data.severity is string && data.severity in ['low', 'medium', 'high', 'critical'] &&
+             data.status is string && data.status in ['new', 'investigating', 'resolved', 'closed'] &&
+             data.appVersion is string && data.appVersion.size() <= 32 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidSystemSetting(data) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'announcementTitle', 'announcementMessage', 'maintenanceMode',
+               'calculatorEnabled', 'cadStudioEnabled', 'gpsWalkEnabled',
+               'gisImportExportEnabled', 'pdfReportsEnabled', 'marketplaceEnabled',
+               'aiAdvisorEnabled', 'documentScannerEnabled', 'academyEnabled',
+               'userGroupPermissions', 'developerGroupPermissions', 'updatedAt'
+             ]) &&
+             data.announcementTitle is string && data.announcementTitle.size() <= 200 &&
+             data.announcementMessage is string && data.announcementMessage.size() <= 1000 &&
+             data.maintenanceMode is bool &&
+             data.calculatorEnabled is bool &&
+             data.cadStudioEnabled is bool &&
+             data.gpsWalkEnabled is bool &&
+             data.gisImportExportEnabled is bool &&
+             (!('pdfReportsEnabled' in data.keys()) || data.pdfReportsEnabled is bool) &&
+             data.marketplaceEnabled is bool &&
+             data.aiAdvisorEnabled is bool &&
+             data.documentScannerEnabled is bool &&
+             data.academyEnabled is bool &&
+             (!('userGroupPermissions' in data.keys()) ||
+              (data.userGroupPermissions is map && data.userGroupPermissions.size() <= 20)) &&
+             (!('developerGroupPermissions' in data.keys()) ||
+              (data.developerGroupPermissions is map && data.developerGroupPermissions.size() <= 20)) &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidUserFeaturePermissions(data, userId) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'uid', 'email', 'username', 'role', 'permissions',
+               'createdAt', 'updatedAt', 'updatedBy', 'version'
+             ]) &&
+             data.uid is string && data.uid == userId &&
+             data.email is string && data.email.size() <= 160 &&
+             data.username is string && data.username.size() <= 120 &&
+             data.role is string && data.role in ['owner', 'developer', 'user'] &&
+             data.permissions is map && data.permissions.size() <= 20 &&
+             data.updatedBy is string && data.updatedBy == request.auth.uid &&
+             data.version is int && data.version >= 1 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidPermissionAuditLog(data) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly([
+               'targetUid', 'targetEmail', 'action', 'changesSummary',
+               'updatedBy', 'updatedByEmail', 'createdAt'
+             ]) &&
+             data.targetUid is string && data.targetUid.size() > 0 && data.targetUid.size() <= 128 &&
+             data.targetEmail is string && data.targetEmail.size() <= 160 &&
+             data.action is string && data.action in ['create', 'update', 'restore_defaults'] &&
+             data.changesSummary is string && data.changesSummary.size() <= 1000 &&
+             data.updatedBy is string && data.updatedBy == request.auth.uid &&
+             data.updatedByEmail is string && data.updatedByEmail.size() <= 160 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidAcademyVideo(data) {
+      return !('id' in data.keys()) &&
+             data.keys().hasOnly(['episodeNumber', 'title', 'difficulty', 'videoUrl', 'updatedBy', 'updatedAt']) &&
+             data.episodeNumber is int && data.episodeNumber >= 1 && data.episodeNumber <= 100 &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 160 &&
+             data.difficulty is string && data.difficulty in ['Beginner', 'Intermediate', 'Advanced'] &&
+             data.videoUrl is string && data.videoUrl.size() <= 500 &&
+             data.updatedBy is string && data.updatedBy == request.auth.uid &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // User profiles
     match /users/{userId} {
       allow get: if isSignedIn() && (request.auth.uid == userId || isDeveloper());
       allow list: if isDeveloper();
-      allow create: if isSignedIn() && 
-                    request.auth.uid == userId && 
-                    (request.resource.data.role == 'user' || isOwner());
-      allow update: if isSignedIn() && (
-        (request.auth.uid == userId && 
-         request.resource.data.role == resource.data.role && 
-         request.resource.data.status == resource.data.status) || 
-        isOwner()
-      );
+      allow create: if isSignedIn() &&
+                    request.auth.uid == userId &&
+                    isValidUserProfile(request.resource.data, userId) &&
+                    request.resource.data.status == 'active' &&
+                    request.resource.data.role == 'user';
+      allow update: if isSignedIn() &&
+                    isValidUserProfile(request.resource.data, userId) &&
+                    request.resource.data.uid == resource.data.uid &&
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    (
+                      (request.auth.uid == userId &&
+                       request.resource.data.role == resource.data.role &&
+                       request.resource.data.status == resource.data.status) ||
+                      (isOwner() && request.resource.data.role in ['user', 'developer'])
+                    );
       allow delete: if isOwner() && resource.data.role != 'owner';
     }
 
-    // Developer invitations - Managed exclusively by Super Admin Owner
-    match /developer_invitations/{invitationId} {
-      allow read, write: if isOwner();
-    }
-
-    // Audit logs - Immutable record of administrative events (backend-only writes)
-    match /audit_logs/{logId} {
-      allow read: if isOwner();
-      allow write: if false;
-    }
-
-    // System settings & announcements - Public read, Owner write
-    match /system_settings/{settingId} {
-      allow read: if true;
-      allow write: if isOwner();
-    }
-
-    // Tutorial videos catalog & stream metadata - Public read, Owner write
-    match /tutorial_videos/{episodeId} {
-      allow read: if true;
-      allow write: if isOwner();
-    }
-
-    // Individual user feature permissions - Self read or Owner read, Owner-only write
-    match /user_feature_permissions/{userId} {
-      allow read: if isSignedIn() && (request.auth.uid == userId || isOwner());
-      allow write: if isOwner();
-    }
-
-    // Bug reports - User submit, Developer & Owner triage
-    match /bug_reports/{reportId} {
-      allow create: if isSignedIn();
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isDeveloper());
-      allow update: if isDeveloper();
+    // Owner-managed developer email allowlist
+    match /developer_emails/{emailId} {
+      allow get: if isOwner() || isDeveloper() || (
+        isSignedIn() &&
+        'email' in request.auth.token &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email.lower() == emailId
+      );
+      allow list: if isOwner() || isDeveloper();
+      allow create: if isOwner() &&
+                    isValidEmailKey(emailId) &&
+                    isValidDeveloperEmail(request.resource.data, emailId);
+      allow update: if isOwner() &&
+                    isValidEmailKey(emailId) &&
+                    isValidDeveloperEmail(request.resource.data, emailId) &&
+                    request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if isOwner();
     }
 
-    // Survey projects - Private to owner surveyor, Owner can access for support
+    // System settings, global feature switches & group controls
+    match /system_settings/{settingId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner() &&
+                   isValidId(settingId) &&
+                   isValidSystemSetting(request.resource.data);
+    }
+
+    // Individual per-user feature permissions (Authoritative key = uid; Owner write only, self/owner read)
+    match /userFeaturePermissions/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isOwner());
+      allow list: if isOwner();
+      allow create: if isOwner() &&
+                    userId is string && userId.size() > 0 && userId.size() <= 128 &&
+                    isValidUserFeaturePermissions(request.resource.data, userId) &&
+                    request.resource.data.version == 1;
+      allow update: if isOwner() &&
+                    isValidUserFeaturePermissions(request.resource.data, userId) &&
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    request.resource.data.version == resource.data.version + 1;
+      allow delete: if isOwner();
+    }
+
+    // Immutable permission audit history (Owner read/create only)
+    match /permissionAuditLogs/{logId} {
+      allow read: if isOwner();
+      allow create: if isOwner() &&
+                    isValidId(logId) &&
+                    isValidPermissionAuditLog(request.resource.data);
+      allow update, delete: if false;
+    }
+
+    // Academy video metadata & streams (Signed-in read, Owner manage)
+    match /academy_videos/{videoId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner() &&
+                   isValidId(videoId) &&
+                   isValidAcademyVideo(request.resource.data);
+    }
+
+    // Per-user video completion tracking
+    match /user_video_progress/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isOwner());
+      allow write: if isSignedIn() &&
+                   request.auth.uid == userId &&
+                   request.resource.data.uid == userId &&
+                   request.resource.data.completedEpisodeIds is list &&
+                   request.resource.data.completedEpisodeIds.size() <= 50 &&
+                   isFeatureEnabled('video_academy', 'academyEnabled', true, true);
+    }
+
+    // Bug reports - User create with 'new' status, owner/dev triage (requires active developer_tools permission)
+    match /bug_reports/{reportId} {
+      allow create: if isSignedIn() &&
+                    isAccountActive() &&
+                    isValidId(reportId) &&
+                    request.resource.data.userId == request.auth.uid &&
+                    isValidBugReport(request.resource.data) &&
+                    request.resource.data.status == 'new';
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isDeveloper());
+      allow update: if isDeveloper() &&
+                    isFeatureEnabled('developer_tools', '', false, true) &&
+                    isValidBugReport(request.resource.data) &&
+                    request.resource.data.userId == resource.data.userId &&
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isOwner();
+    }
+
+    // Survey projects - Strictly private to creator (plus Super Admin Owner), gated by module permission
     match /survey_projects/{projectId} {
       allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
       allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
-      allow create: if isSignedIn() && 
-                    isValidId(projectId) && 
-                    isValidSurveyProject(request.resource.data);
-      allow update: if isSignedIn() && 
-                    resource.data.userId == request.auth.uid && 
+      allow create: if isSignedIn() &&
+                    isValidId(projectId) &&
+                    isValidSurveyProject(request.resource.data) &&
+                    isSurveyFeatureEnabledForType(request.resource.data.parcelType);
+      allow update: if isSignedIn() &&
+                    resource.data.userId == request.auth.uid &&
                     request.resource.data.userId == resource.data.userId &&
-                    isValidSurveyProject(request.resource.data);
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    isValidSurveyProject(request.resource.data) &&
+                    isSurveyFeatureEnabledForType(request.resource.data.parcelType);
       allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
     }
 
-    // Market listings - Publicly readable, owner editable, strictly prevent self-verification
+    // Market listings - Publicly readable for buyers; creators cannot self-verify; gated by marketplace permission
     match /market_listings/{listingId} {
       allow read: if true;
-      allow create: if isSignedIn() && 
-                    isValidId(listingId) && 
+      allow create: if isSignedIn() &&
+                    isValidId(listingId) &&
+                    request.resource.data.userId == request.auth.uid &&
                     isValidMarketListing(request.resource.data) &&
                     request.resource.data.verified == false &&
+                    request.resource.data.verificationStatus in ['unverified', 'pending'] &&
+                    isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true);
+      allow update: if isSignedIn() &&
+                    isValidMarketListing(request.resource.data) &&
+                    request.resource.data.createdAt == resource.data.createdAt &&
                     (
-                      !('verificationStatus' in request.resource.data) ||
-                      request.resource.data.verificationStatus == 'unverified' || 
-                      request.resource.data.verificationStatus == 'UNVERIFIED' ||
-                      request.resource.data.verificationStatus == 'pending' ||
-                      request.resource.data.verificationStatus == 'SUBMITTED'
+                      (resource.data.userId == request.auth.uid &&
+                       request.resource.data.userId == resource.data.userId &&
+                       request.resource.data.verified == resource.data.verified &&
+                       request.resource.data.verificationStatus == resource.data.verificationStatus &&
+                       isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true)) ||
+                      isOwner()
                     );
-      allow update: if isSignedIn() && (
-        (resource.data.userId == request.auth.uid && 
-         request.resource.data.userId == resource.data.userId &&
-         isValidMarketListing(request.resource.data) &&
-         request.resource.data.verified == resource.data.verified &&
-         request.resource.data.verificationStatus == resource.data.verificationStatus) ||
-        isOwner()
-      );
-      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+      allow delete: if isSignedIn() && (
+                      (resource.data.userId == request.auth.uid &&
+                       isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true)) ||
+                      isOwner()
+                    );
     }
 
-    // Private seller data - Strictly restricted to the listing owner and Super Admin Owner
+    // Private seller contact - Restricted to listing owner and Super Admin Owner
     match /market_seller_data/{listingId} {
       allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
-      allow create: if isSignedIn() && 
-                    isValidId(listingId) && 
-                    request.resource.data.userId == request.auth.uid;
-      allow update: if isSignedIn() && (
-        (resource.data.userId == request.auth.uid && 
-         request.resource.data.userId == resource.data.userId) ||
-        isOwner()
-      );
-      allow delete: if isSignedIn() && (resource.data.userId == request.auth.uid || isOwner());
+      allow create: if isSignedIn() &&
+                    isValidId(listingId) &&
+                    isValidPrivateSellerData(request.resource.data, listingId) &&
+                    isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true) &&
+                    existsAfter(/databases/$(database)/documents/market_listings/$(listingId)) &&
+                    getAfter(/databases/$(database)/documents/market_listings/$(listingId)).data.userId == request.auth.uid;
+      allow update: if isSignedIn() &&
+                    isValidPrivateSellerData(request.resource.data, listingId) &&
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    request.resource.data.userId == resource.data.userId &&
+                    ((resource.data.userId == request.auth.uid &&
+                      isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true)) || isOwner());
+      allow delete: if isSignedIn() && (
+                      (resource.data.userId == request.auth.uid &&
+                       isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true)) ||
+                      isOwner()
+                    );
+    }
+
+    // Listing moderation reports - Owner-only moderation decisions
+    match /listing_reports/{reportId} {
+      allow create: if isSignedIn() &&
+                    isValidId(reportId) &&
+                    request.resource.data.reporterUid == request.auth.uid &&
+                    isValidListingReport(request.resource.data) &&
+                    request.resource.data.status == 'open' &&
+                    isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true);
+      allow read: if isSignedIn() && (resource.data.reporterUid == request.auth.uid || isOwner());
+      allow update: if isOwner() &&
+                    isValidListingReport(request.resource.data) &&
+                    request.resource.data.reporterUid == resource.data.reporterUid &&
+                    request.resource.data.createdAt == resource.data.createdAt &&
+                    request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isOwner();
+    }
+
+    // Buyer-to-seller contact inquiries (does not leak private phone/email)
+    match /market_inquiries/{inquiryId} {
+      allow create: if isSignedIn() &&
+                    isValidId(inquiryId) &&
+                    isValidMarketInquiry(request.resource.data) &&
+                    request.resource.data.status == 'sent' &&
+                    isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true);
+      allow read: if isSignedIn() &&
+                  (resource.data.buyerUid == request.auth.uid ||
+                   resource.data.sellerUid == request.auth.uid ||
+                   isOwner());
+      allow update, delete: if isSignedIn() && (
+                              (resource.data.buyerUid == request.auth.uid &&
+                               isFeatureEnabled('marketplace', 'marketplaceEnabled', true, true)) ||
+                              isOwner()
+                            );
     }
   }
 }
