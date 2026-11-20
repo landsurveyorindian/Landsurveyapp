@@ -8,7 +8,7 @@
         "userId": { "type": "string" },
         "name": { "type": "string", "maxLength": 150 },
         "state": { "type": "string", "maxLength": 80 },
-        "parcelType": { "type": "string", "enum": ["four_sided", "five_sided", "triangle", "traverse", "cad", "gps_walk", "converter"] },
+        "parcelType": { "type": "string", "enum": ["four_sided", "triangle", "traverse", "cad", "gps_walk", "converter"] },
         "areaSqm": { "type": "number" },
         "areaSqFt": { "type": "number" },
         "areaSqYards": { "type": "number" },

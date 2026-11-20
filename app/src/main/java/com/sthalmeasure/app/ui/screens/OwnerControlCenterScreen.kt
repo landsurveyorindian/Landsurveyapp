@@ -223,7 +223,7 @@ fun OwnerControlCenterScreen(
 
                         FeatureToggleRow(
                             label = "Plot Calculator & State Units",
-                            subtitle = "4-Sided, 5-Sided, Heron, Traverse & 36-State Converter",
+                            subtitle = "4-Sided, Heron, Traverse & 36-State Converter",
                             checked = draftSettings.calculatorEnabled,
                             tag = "switch_feat_calc",
                             onCheckedChange = { draftSettings = draftSettings.copy(calculatorEnabled = it) }
@@ -238,8 +238,8 @@ fun OwnerControlCenterScreen(
                         )
                         HorizontalDivider()
                         FeatureToggleRow(
-                            label = "GPS Boundary Walk",
-                            subtitle = "Live GNSS Kalman Tracking, Multipath Filter & UTM",
+                            label = "GPS Walk Area",
+                            subtitle = "Live GNSS Kalman, Bhuvan & Google Map Layers & UTM",
                             checked = draftSettings.gpsWalkEnabled,
                             tag = "switch_feat_gps",
                             onCheckedChange = { draftSettings = draftSettings.copy(gpsWalkEnabled = it) }

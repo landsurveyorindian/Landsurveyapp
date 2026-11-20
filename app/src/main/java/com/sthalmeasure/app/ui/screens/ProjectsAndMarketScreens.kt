@@ -122,10 +122,10 @@ fun ProjectsScreen(
             listOf(
                 "all" to "All",
                 "four_sided" to "4-Sided",
-                "five_sided" to "5-Sided",
+                "triangle" to "Triangle",
                 "traverse" to "Traverse",
                 "cad" to "CAD",
-                "gps_walk" to "GPS"
+                "gps_walk" to "GPS Area"
             ).forEach { (key, label) ->
                 FilterChip(
                     selected = filterType == key,
@@ -139,7 +139,7 @@ fun ProjectsScreen(
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     if (projects.isEmpty()) {
-                        "No saved survey projects yet. Calculate a plot or complete a GPS walk to sync to your vault."
+                        "No saved survey projects yet. Calculate a plot or complete a GPS Walk Area survey to sync to your vault."
                     } else {
                         "No saved surveys match your current search/filter."
                     },

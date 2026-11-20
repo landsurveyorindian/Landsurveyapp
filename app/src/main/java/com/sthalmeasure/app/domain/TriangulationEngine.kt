@@ -1,6 +1,8 @@
 package com.sthalmeasure.app.domain
 
+import java.util.Locale
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.acos
 import kotlin.math.cos
 import kotlin.math.max
@@ -31,17 +33,11 @@ data class FourSidedResult(
     val triangle1: HeronTriangleResult,
     val triangle2: HeronTriangleResult,
     val errorMessage: String? = null,
-    val points: List<PlotPoint> = emptyList()
-)
-
-data class FiveSidedResult(
-    val isValid: Boolean,
-    val totalArea: Double,
-    val triangle1: HeronTriangleResult,
-    val triangle2: HeronTriangleResult,
-    val triangle3: HeronTriangleResult,
-    val errorMessage: String? = null,
-    val points: List<PlotPoint> = emptyList()
+    val points: List<PlotPoint> = emptyList(),
+    val effectiveDiagonalAC: Double = 0.0,
+    val minValidDiagonal: Double = 0.0,
+    val maxValidDiagonal: Double = 0.0,
+    val suggestedDiagonal: Double = 0.0
 )
 
 data class FourSidedNoDiagResult(
@@ -68,8 +64,58 @@ data class HissaShareItem(
     val acres: Double
 )
 
+fun parseSurveyDouble(raw: String): Double? {
+    val cleaned = raw
+        .replace(",", "")
+        .replace(" ", "")
+        .trim()
+    if (cleaned.isEmpty()) return null
+    return cleaned.toDoubleOrNull()?.takeIf { it.isFinite() }
+}
+
 object TriangulationEngine {
     private const val EPS = 1e-6
+
+    fun validDiagonalRange(
+        sideA: Double,
+        sideB: Double,
+        sideC: Double,
+        sideD: Double
+    ): Pair<Double, Double>? {
+        if (!sideA.isFinite() || !sideB.isFinite() || !sideC.isFinite() || !sideD.isFinite() ||
+            sideA <= 0.0 || sideB <= 0.0 || sideC <= 0.0 || sideD <= 0.0
+        ) {
+            return null
+        }
+        val s = (sideA + sideB + sideC + sideD) / 2.0
+        if (sideA >= s - EPS || sideB >= s - EPS || sideC >= s - EPS || sideD >= s - EPS) {
+            return null
+        }
+        val minDiag = max(abs(sideA - sideB), abs(sideC - sideD))
+        val maxDiag = min(sideA + sideB, sideC + sideD)
+        if (minDiag >= maxDiag - EPS) return null
+        return Pair(minDiag, maxDiag)
+    }
+
+    fun suggestDiagonalAC(
+        sideA: Double,
+        sideB: Double,
+        sideC: Double,
+        sideD: Double
+    ): Double {
+        val range = validDiagonalRange(sideA, sideB, sideC, sideD) ?: return 0.0
+        val prodACBD = sideA * sideC + sideB * sideD
+        val prodABCD = sideA * sideB + sideC * sideD
+        val prodADBC = sideA * sideD + sideB * sideC
+        val ptolemy = if (prodADBC > 0.0) sqrt(max(0.0, (prodACBD * prodABCD) / prodADBC)) else 0.0
+        val mid = (range.first + range.second) / 2.0
+        val candidate = if (ptolemy.isFinite() && ptolemy > range.first + EPS && ptolemy < range.second - EPS) {
+            ptolemy
+        } else {
+            mid
+        }
+        return candidate
+    }
 
     fun calculateHeronTriangle(a: Double, b: Double, c: Double): HeronTriangleResult {
         if (!a.isFinite() || !b.isFinite() || !c.isFinite() || a <= 0.0 || b <= 0.0 || c <= 0.0) {
@@ -78,7 +124,7 @@ object TriangulationEngine {
         if (a + b <= c + EPS || a + c <= b + EPS || b + c <= a + EPS) {
             return HeronTriangleResult(
                 a, b, c, false, 0.0, 0.0,
-                "Invalid triangle: sum of any two sides must exceed the third ($a, $b, $c)."
+                "Invalid triangle: sum of any two sides must exceed the third (${String.format(Locale.US, "%.2f", a)}, ${String.format(Locale.US, "%.2f", b)}, ${String.format(Locale.US, "%.2f", c)})."
             )
         }
         val s = (a + b + c) / 2.0
@@ -87,7 +133,7 @@ object TriangulationEngine {
             return HeronTriangleResult(a, b, c, false, s, 0.0, "Degenerate collinear triangle with zero area.")
         }
         val area = sqrt(radicand)
-        val details = "s = ${"%.2f".format(s)}, Area = ${"%.2f".format(area)}"
+        val details = String.format(Locale.US, "s = %.2f, Area = %.2f", s, area)
         return HeronTriangleResult(a, b, c, true, s, area, null, details)
     }
 
@@ -110,84 +156,91 @@ object TriangulationEngine {
         sideD: Double,
         diagonalAC: Double
     ): FourSidedResult {
-        val t1 = calculateHeronTriangle(sideA, sideB, diagonalAC)
-        val t2 = calculateHeronTriangle(sideC, sideD, diagonalAC)
+        if (!sideA.isFinite() || !sideB.isFinite() || !sideC.isFinite() || !sideD.isFinite() ||
+            sideA <= 0.0 || sideB <= 0.0 || sideC <= 0.0 || sideD <= 0.0
+        ) {
+            val emptyTri = HeronTriangleResult(0.0, 0.0, 0.0, false, 0.0, 0.0, "All four boundary sides must be positive numbers.")
+            return FourSidedResult(
+                isValid = false,
+                totalArea = 0.0,
+                triangle1 = emptyTri,
+                triangle2 = emptyTri,
+                errorMessage = "All four boundary sides (A, B, C, D) must be positive numbers."
+            )
+        }
+
+        val range = validDiagonalRange(sideA, sideB, sideC, sideD)
+        val suggested = suggestDiagonalAC(sideA, sideB, sideC, sideD)
+        if (range == null) {
+            val s = (sideA + sideB + sideC + sideD) / 2.0
+            val msg = String.format(
+                Locale.US,
+                "Impossible 4-sided closure: a single side equals or exceeds half the perimeter (%.2f).",
+                s
+            )
+            val emptyTri = HeronTriangleResult(0.0, 0.0, 0.0, false, 0.0, 0.0, msg)
+            return FourSidedResult(
+                isValid = false,
+                totalArea = 0.0,
+                triangle1 = emptyTri,
+                triangle2 = emptyTri,
+                errorMessage = msg
+            )
+        }
+
+        val effectiveDiag = if (!diagonalAC.isFinite() || diagonalAC <= 0.0) suggested else diagonalAC
+        val t1 = calculateHeronTriangle(sideA, sideB, effectiveDiag)
+        val t2 = calculateHeronTriangle(sideC, sideD, effectiveDiag)
         if (!t1.isValid || !t2.isValid) {
+            val msg = String.format(
+                Locale.US,
+                "Diagonal AC (%.2f) must be between %.2f and %.2f for sides (%.1f, %.1f, %.1f, %.1f). Recommended AC: %.2f.",
+                effectiveDiag,
+                range.first,
+                range.second,
+                sideA,
+                sideB,
+                sideC,
+                sideD,
+                suggested
+            )
             return FourSidedResult(
                 isValid = false,
                 totalArea = 0.0,
                 triangle1 = t1,
                 triangle2 = t2,
-                errorMessage = t1.errorMessage ?: t2.errorMessage ?: "Invalid 4-sided dimensions."
+                errorMessage = msg,
+                effectiveDiagonalAC = effectiveDiag,
+                minValidDiagonal = range.first,
+                maxValidDiagonal = range.second,
+                suggestedDiagonal = suggested
             )
         }
-        val denom1 = 2.0 * sideA * diagonalAC
-        val cos1 = if (denom1 > 0.0) ((sideA * sideA + diagonalAC * diagonalAC - sideB * sideB) / denom1).coerceIn(-1.0, 1.0) else 0.0
+        val denom1 = 2.0 * sideA * effectiveDiag
+        val cos1 = if (denom1 > 0.0) ((sideA * sideA + effectiveDiag * effectiveDiag - sideB * sideB) / denom1).coerceIn(-1.0, 1.0) else 0.0
         val theta1 = acos(cos1)
 
-        val denom2 = 2.0 * diagonalAC * sideD
-        val cos2 = if (denom2 > 0.0) ((diagonalAC * diagonalAC + sideD * sideD - sideC * sideC) / denom2).coerceIn(-1.0, 1.0) else 0.0
+        val denom2 = 2.0 * effectiveDiag * sideD
+        val cos2 = if (denom2 > 0.0) ((effectiveDiag * effectiveDiag + sideD * sideD - sideC * sideC) / denom2).coerceIn(-1.0, 1.0) else 0.0
         val theta2 = acos(cos2)
         val totalAngleV4 = theta1 + theta2
 
         val points = listOf(
             PlotPoint(0.0, 0.0, "A"),
             PlotPoint(sideA, 0.0, "B"),
-            PlotPoint(diagonalAC * cos(theta1), max(0.1, diagonalAC * sin(theta1)), "C"),
-            PlotPoint(sideD * cos(totalAngleV4), max(0.1, sideD * sin(totalAngleV4)), "D")
+            PlotPoint(effectiveDiag * cos(theta1), effectiveDiag * sin(theta1), "C"),
+            PlotPoint(sideD * cos(totalAngleV4), sideD * sin(totalAngleV4), "D")
         )
         return FourSidedResult(
             isValid = true,
             totalArea = t1.area + t2.area,
             triangle1 = t1,
             triangle2 = t2,
-            points = points
-        )
-    }
-
-    fun calculateFiveSidedPlot(
-        sideA: Double,
-        sideB: Double,
-        sideC: Double,
-        sideD: Double,
-        sideE: Double,
-        diag1: Double,
-        diag2: Double
-    ): FiveSidedResult {
-        val t1 = calculateHeronTriangle(sideA, sideB, diag1)
-        val t2 = calculateHeronTriangle(diag1, sideC, diag2)
-        val t3 = calculateHeronTriangle(diag2, sideD, sideE)
-        if (!t1.isValid || !t2.isValid || !t3.isValid) {
-            return FiveSidedResult(
-                isValid = false,
-                totalArea = 0.0,
-                triangle1 = t1,
-                triangle2 = t2,
-                triangle3 = t3,
-                errorMessage = t1.errorMessage ?: t2.errorMessage ?: t3.errorMessage ?: "Invalid 5-sided dimensions."
-            )
-        }
-        val cos1 = ((sideA * sideA + diag1 * diag1 - sideB * sideB) / (2.0 * sideA * diag1)).coerceIn(-1.0, 1.0)
-        val ang1 = acos(cos1)
-        val cos2 = ((diag1 * diag1 + diag2 * diag2 - sideC * sideC) / (2.0 * diag1 * diag2)).coerceIn(-1.0, 1.0)
-        val ang2 = ang1 + acos(cos2)
-        val cos3 = ((diag2 * diag2 + sideE * sideE - sideD * sideD) / (2.0 * diag2 * sideE)).coerceIn(-1.0, 1.0)
-        val ang3 = ang2 + acos(cos3)
-
-        val points = listOf(
-            PlotPoint(0.0, 0.0, "1"),
-            PlotPoint(sideA, 0.0, "2"),
-            PlotPoint(diag1 * cos(ang1), max(0.1, diag1 * sin(ang1)), "3"),
-            PlotPoint(diag2 * cos(ang2), max(0.1, diag2 * sin(ang2)), "4"),
-            PlotPoint(sideE * cos(ang3), max(0.1, sideE * sin(ang3)), "5")
-        )
-        return FiveSidedResult(
-            isValid = true,
-            totalArea = t1.area + t2.area + t3.area,
-            triangle1 = t1,
-            triangle2 = t2,
-            triangle3 = t3,
-            points = points
+            points = points,
+            effectiveDiagonalAC = effectiveDiag,
+            minValidDiagonal = range.first,
+            maxValidDiagonal = range.second,
+            suggestedDiagonal = suggested
         )
     }
 
@@ -211,7 +264,11 @@ object TriangulationEngine {
             return FourSidedNoDiagResult(
                 isValid = false, cyclicArea = 0.0, patwariArea = 0.0, semiPerimeter = s,
                 diagonalAC = 0.0, diagonalBD = 0.0, cornerAngleDegA = 0.0, cornerAngleDegB = 0.0,
-                errorMessage = "Impossible polygon closure: a single side equals or exceeds half the perimeter (${"%.2f".format(s)})."
+                errorMessage = String.format(
+                    Locale.US,
+                    "Impossible polygon closure: a single side equals or exceeds half the perimeter (%.2f).",
+                    s
+                )
             )
         }
 
@@ -238,8 +295,8 @@ object TriangulationEngine {
         val points = listOf(
             PlotPoint(0.0, 0.0, "A"),
             PlotPoint(sideA, 0.0, "B"),
-            PlotPoint(sideA - sideB * cos(angleBRad), max(0.1, sideB * sin(angleBRad)), "C"),
-            PlotPoint(sideD * cos(angleARad), max(0.1, sideD * sin(angleARad)), "D")
+            PlotPoint(sideA - sideB * cos(angleBRad), sideB * sin(angleBRad), "C"),
+            PlotPoint(sideD * cos(angleARad), sideD * sin(angleARad), "D")
         )
         return FourSidedNoDiagResult(
             isValid = true,
@@ -258,15 +315,17 @@ object TriangulationEngine {
         totalSqm: Double,
         shares: List<Triple<String, Double, Double>>
     ): List<HissaShareItem> {
-        val safeTotal = totalSqm.coerceAtLeast(0.0)
+        val safeTotal = if (totalSqm.isFinite()) totalSqm.coerceAtLeast(0.0) else 0.0
         return shares.map { (name, num, den) ->
-            val ratio = if (den > 0.0 && num >= 0.0) (num / den).coerceIn(0.0, 1.0) else 0.0
+            val safeNum = if (num.isFinite() && num >= 0.0) num else 0.0
+            val safeDen = if (den.isFinite() && den > 0.0) den else 0.0
+            val ratio = if (safeDen > 0.0) (safeNum / safeDen).coerceIn(0.0, 1.0) else 0.0
             val shareSqm = safeTotal * ratio
             val breakdown = convertAreaFromSqm(shareSqm)
             HissaShareItem(
                 holderName = name.ifBlank { "Co-Owner" },
-                numerator = num,
-                denominator = den,
+                numerator = safeNum,
+                denominator = safeDen,
                 fractionPercent = ratio * 100.0,
                 areaSqm = shareSqm,
                 cents = breakdown.cents,

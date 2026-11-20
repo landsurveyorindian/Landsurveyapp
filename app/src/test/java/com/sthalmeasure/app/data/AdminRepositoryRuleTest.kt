@@ -98,6 +98,12 @@ class AdminRepositoryRuleTest : FirestoreEmulatorTestBase() {
 
         val devEmail = "dev_${UUID.randomUUID().toString().replace("-", "").take(8)}@sthalmeasure.test"
 
+        // 0. Regular user checking an unauthorized developer email must safely return false (never crash sign-in)
+        val nonDevCheck = withTimeout(15_000L) {
+            adminRepo.isEmailAuthorizedDeveloper(testEmail)
+        }
+        assertFalse("Expected non-developer check to return false without crashing", nonDevCheck)
+
         // 1. Primary regular user creates a bug report, is blocked from admin collections
         val bugId = withTimeout(15_000L) {
             accountRepo.submitBugReport(
@@ -107,7 +113,7 @@ class AdminRepositoryRuleTest : FirestoreEmulatorTestBase() {
                     userName = "Field Surveyor",
                     title = "Compass offset",
                     description = "Check azimuth display",
-                    module = "GPS Walk",
+                    module = "GPS Walk Area",
                     severity = "medium",
                     status = "new"
                 )

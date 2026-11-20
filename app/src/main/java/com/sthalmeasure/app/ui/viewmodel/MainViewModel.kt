@@ -1,14 +1,19 @@
 package com.sthalmeasure.app.ui.viewmodel
 
 import android.app.Application
+import android.content.Intent
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.Firebase
+import com.google.firebase.Timestamp
 import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestoreException
 import com.sthalmeasure.app.ai.AiRepository
 import com.sthalmeasure.app.ai.ChatMessage
 import com.sthalmeasure.app.ai.ScannedLandDocument
+import com.sthalmeasure.app.data.firestore.FirestoreProvider
 import com.sthalmeasure.app.data.model.AcademyVideoEntry
 import com.sthalmeasure.app.data.model.AppRole
 import com.sthalmeasure.app.data.model.BugReport
@@ -34,8 +39,10 @@ import com.sthalmeasure.app.domain.PermissionAccessState
 import com.sthalmeasure.app.domain.PermissionEvaluator
 import com.sthalmeasure.app.domain.PermissionSourceState
 import com.sthalmeasure.app.domain.convertAreaFromSqm
+import com.sthalmeasure.app.firebase.AppCheckHelper
 import com.sthalmeasure.app.firebase.AuthManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -47,6 +54,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
 sealed interface AuthProfileState {
@@ -57,11 +65,20 @@ sealed interface AuthProfileState {
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private val surveyRepo = SurveyRepository(application)
-    private val marketRepo = MarketRepository(application)
-    private val accountRepo = AccountAndSupportRepository(application)
-    private val adminRepo = AdminRepository(application)
-    private val aiRepo = AiRepository()
+    companion object {
+        const val LOCAL_PREVIEW_UID = "local_preview_user"
+    }
+
+    private val surveyRepo by lazy { SurveyRepository(application) }
+    private val marketRepo by lazy { MarketRepository(application) }
+    private val accountRepo by lazy { AccountAndSupportRepository(application) }
+    private val adminRepo by lazy { AdminRepository(application) }
+    private val aiRepo by lazy { AiRepository() }
+
+    private val _startupReady = MutableStateFlow(false)
+    val startupReady: StateFlow<Boolean> = _startupReady.asStateFlow()
+
+    private var backendBootstrapped = false
 
     private val _authUser = MutableStateFlow<FirebaseUser?>(null)
     val authUser: StateFlow<FirebaseUser?> = _authUser.asStateFlow()
@@ -75,13 +92,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _appRole = MutableStateFlow(AppRole.USER)
     val appRole: StateFlow<AppRole> = _appRole.asStateFlow()
 
-    private val _currentProfile = MutableStateFlow<UserProfile?>(null)
+    private val _currentProfile = MutableStateFlow<UserProfile?>(
+        if (!AuthManager.REQUIRE_SIGN_IN) {
+            UserProfile(
+                uid = LOCAL_PREVIEW_UID,
+                email = "",
+                displayName = "Surveyor Preview",
+                preferredState = "Andhra Pradesh",
+                role = "user",
+                status = "active"
+            )
+        } else null
+    )
     val currentProfile: StateFlow<UserProfile?> = _currentProfile.asStateFlow()
 
-    private val _systemSettingsState = MutableStateFlow<PermissionSourceState<SystemSettings>>(PermissionSourceState.Loading)
+    private val _systemSettingsState = MutableStateFlow<PermissionSourceState<SystemSettings>>(
+        if (!AuthManager.REQUIRE_SIGN_IN) {
+            PermissionSourceState.Loaded(SystemSettings())
+        } else {
+            PermissionSourceState.Loading
+        }
+    )
     val systemSettingsState: StateFlow<PermissionSourceState<SystemSettings>> = _systemSettingsState.asStateFlow()
 
-    private val _individualPermissionsState = MutableStateFlow<PermissionSourceState<UserFeaturePermissions?>>(PermissionSourceState.Loading)
+    private val _individualPermissionsState = MutableStateFlow<PermissionSourceState<UserFeaturePermissions?>>(
+        if (!AuthManager.REQUIRE_SIGN_IN) {
+            PermissionSourceState.Loaded(null)
+        } else {
+            PermissionSourceState.Loading
+        }
+    )
     val individualPermissionsState: StateFlow<PermissionSourceState<UserFeaturePermissions?>> = _individualPermissionsState.asStateFlow()
 
     val systemSettings: StateFlow<SystemSettings> = _systemSettingsState
@@ -109,7 +149,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.Eagerly,
-        initialValue = AppFeature.entries.associateWith { PermissionAccessState.LOADING }
+        initialValue = AppFeature.entries.associateWith {
+            if (!AuthManager.REQUIRE_SIGN_IN) PermissionAccessState.ALLOWED else PermissionAccessState.LOADING
+        }
     )
 
     val effectivePermissions: StateFlow<Map<AppFeature, Boolean>> = featureAccessStates
@@ -119,7 +161,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = AppFeature.entries.associateWith { false }
+            initialValue = AppFeature.entries.associateWith { !AuthManager.REQUIRE_SIGN_IN }
         )
 
     private val _allUserFeaturePermissions = MutableStateFlow<List<UserFeaturePermissions>>(emptyList())
@@ -211,8 +253,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val listenerJobs = mutableListOf<Job>()
 
-    init {
+    fun ensureBackendInitialized(intent: Intent? = null) {
+        if (backendBootstrapped) return
+        backendBootstrapped = true
+        val appContext = getApplication<Application>()
+        if (!AuthManager.REQUIRE_SIGN_IN) {
+            activateLocalPreviewMode()
+            _startupReady.value = true
+            viewModelScope.launch(Dispatchers.IO) {
+                runCatching { AppCheckHelper.configureAppCheck(appContext, intent) }
+                runCatching { FirestoreProvider.getDb(appContext) }
+            }
+            return
+        }
         viewModelScope.launch {
+            val initialUser = try {
+                withContext(Dispatchers.IO) {
+                    runCatching { AppCheckHelper.configureAppCheck(appContext, intent) }
+                    runCatching { FirestoreProvider.getDb(appContext) }
+                    runCatching { Firebase.auth.currentUser }.getOrNull()
+                }
+            } finally {
+                _startupReady.value = true
+            }
+            _authUser.value = initialUser
             AuthManager.observeAuthState().collect { user ->
                 _authUser.value = user
                 cancelDataJobs()
@@ -239,6 +303,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    private fun activateLocalPreviewMode() {
+        cancelDataJobs()
+        val previewProfile = UserProfile(
+            uid = LOCAL_PREVIEW_UID,
+            email = "",
+            displayName = "Surveyor Preview",
+            preferredState = _activeState.value,
+            role = "user",
+            status = "active"
+        )
+        _authUser.value = null
+        _appRole.value = AppRole.USER
+        _currentProfile.value = previewProfile
+        _systemSettingsState.value = PermissionSourceState.Loaded(SystemSettings())
+        _individualPermissionsState.value = PermissionSourceState.Loaded(null)
+        _authProfileState.value = AuthProfileState.Ready(previewProfile)
     }
 
     private fun cancelDataJobs() {
@@ -311,7 +393,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return AppRole.DEVELOPER
         }
 
-        if (user.isEmailVerified && email.isNotBlank() && adminRepo.isEmailAuthorizedDeveloper(email)) {
+        val isAuthorizedDev = if (user.isEmailVerified && email.isNotBlank()) {
+            try {
+                adminRepo.isEmailAuthorizedDeveloper(email)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (t: Throwable) {
+                android.util.Log.w("MainViewModel", "Developer email check skipped for $email; defaulting to USER.", t)
+                false
+            }
+        } else {
+            false
+        }
+        if (isAuthorizedDev) {
             return AppRole.DEVELOPER
         }
         return AppRole.USER
@@ -334,7 +428,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshPermissions() {
-        val user = _authUser.value ?: return
+        val user = _authUser.value
+        if (user == null) {
+            if (!AuthManager.REQUIRE_SIGN_IN) {
+                activateLocalPreviewMode()
+            }
+            return
+        }
         viewModelScope.launch {
             try {
                 val resolvedRole = resolveUserRole(user)
@@ -368,24 +468,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _authProfileState.value = AuthProfileState.Ready(existing)
                     startDataListeners(user.uid, resolvedRole)
                 } else if (pendingRegName != null || pendingRegState != null) {
-                    val chosenName = pendingRegName ?: user.displayName.orEmpty().ifBlank { "Surveyor" }
+                    val chosenName = pendingRegName ?: user.displayName.orEmpty().trim()
                     val chosenState = pendingRegState ?: "Andhra Pradesh"
-                    val profile = UserProfile(
-                        uid = user.uid,
-                        email = user.email.orEmpty(),
-                        displayName = chosenName,
-                        photoUrl = user.photoUrl?.toString().orEmpty(),
-                        preferredState = chosenState
-                    )
-                    accountRepo.upsertUserProfile(profile)
                     _activeState.value = chosenState
-                    clearPendingRegistration()
-                    val resolvedRole = resolveUserRole(user)
-                    _appRole.value = resolvedRole
-                    _currentProfile.value = profile
-                    notifyPortalMismatchIfNeeded(resolvedRole)
-                    _authProfileState.value = AuthProfileState.Ready(profile)
-                    startDataListeners(user.uid, resolvedRole)
+                    if (chosenName.length < 2) {
+                        clearPendingRegistration()
+                        _authProfileState.value = AuthProfileState.NeedsRegistration(user)
+                    } else {
+                        val profile = UserProfile(
+                            uid = user.uid,
+                            email = user.email.orEmpty(),
+                            displayName = chosenName,
+                            photoUrl = user.photoUrl?.toString().orEmpty(),
+                            preferredState = chosenState
+                        )
+                        accountRepo.upsertUserProfile(profile)
+                        clearPendingRegistration()
+                        val resolvedRole = resolveUserRole(user)
+                        _appRole.value = resolvedRole
+                        _currentProfile.value = profile
+                        notifyPortalMismatchIfNeeded(resolvedRole)
+                        _authProfileState.value = AuthProfileState.Ready(profile)
+                        startDataListeners(user.uid, resolvedRole)
+                    }
                 } else {
                     _authProfileState.value = AuthProfileState.NeedsRegistration(user)
                 }
@@ -406,8 +511,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun completeRegistration(displayName: String, preferredState: String) {
         val user = _authUser.value ?: return
         val cleanName = displayName.trim()
-        if (cleanName.isBlank()) {
-            _registrationError.value = "Please enter your full name."
+        if (cleanName.length < 2) {
+            _registrationError.value = "Please enter your full name (at least 2 characters)."
             return
         }
         val cleanState = preferredState.ifBlank { "Andhra Pradesh" }
@@ -555,10 +660,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         notes: String,
         summaryJson: String = "{}"
     ) {
-        val uid = _authUser.value?.uid ?: run {
-            _statusBanner.value = "Please sign in to save projects."
-            return
-        }
         val requiredFeature = when (parcelType) {
             "gps_walk" -> AppFeature.GPS_SURVEY
             "cad" -> AppFeature.CAD_TOOLS
@@ -568,13 +669,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _statusBanner.value = "${requiredFeature.label} is disabled for your account."
             return
         }
+        val uid = _authUser.value?.uid
         val b = convertAreaFromSqm(areaSqm)
+        val projectTitle = name.ifBlank { "Survey ${parcelType.uppercase()}" }
+        if (uid == null) {
+            if (!AuthManager.REQUIRE_SIGN_IN) {
+                val now = Timestamp.now()
+                val localProject = SurveyProject(
+                    id = "local_${UUID.randomUUID()}",
+                    userId = LOCAL_PREVIEW_UID,
+                    name = projectTitle,
+                    state = _activeState.value,
+                    parcelType = parcelType,
+                    areaSqm = b.sqm,
+                    areaSqFt = b.sqft,
+                    areaSqYards = b.sqYards,
+                    areaAcres = b.acres,
+                    areaCents = b.cents,
+                    perimeterMeters = perimeterMeters,
+                    notes = notes,
+                    summaryJson = summaryJson,
+                    createdAt = now,
+                    updatedAt = now
+                )
+                _projects.value = listOf(localProject) + _projects.value
+                _statusBanner.value = "Saved '$projectTitle' to Survey Vault."
+            } else {
+                _statusBanner.value = "Please sign in to save projects."
+            }
+            return
+        }
         viewModelScope.launch {
             try {
                 surveyRepo.createProject(
                     SurveyProject(
                         userId = uid,
-                        name = name.ifBlank { "Survey ${parcelType.uppercase()}" },
+                        name = projectTitle,
                         state = _activeState.value,
                         parcelType = parcelType,
                         areaSqm = b.sqm,
@@ -587,7 +717,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         summaryJson = summaryJson
                     )
                 )
-                _statusBanner.value = "Saved '$name' to Survey Vault."
+                _statusBanner.value = "Saved '$projectTitle' to Survey Vault."
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
@@ -597,6 +727,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateProjectNotes(projectId: String, name: String, state: String, notes: String) {
+        if (_authUser.value == null && !AuthManager.REQUIRE_SIGN_IN) {
+            _projects.value = _projects.value.map { proj ->
+                if (proj.id == projectId) {
+                    proj.copy(name = name, state = state, notes = notes, updatedAt = Timestamp.now())
+                } else proj
+            }
+            _statusBanner.value = "Project updated."
+            return
+        }
         viewModelScope.launch {
             try {
                 surveyRepo.updateProject(projectId, name, state, notes)
@@ -610,6 +749,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteProject(projectId: String) {
+        if (_authUser.value == null && !AuthManager.REQUIRE_SIGN_IN) {
+            _projects.value = _projects.value.filterNot { it.id == projectId }
+            _statusBanner.value = "Project removed."
+            return
+        }
         viewModelScope.launch {
             try {
                 surveyRepo.deleteProject(projectId)
@@ -638,9 +782,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _statusBanner.value = "Marketplace access is disabled for your account."
             return
         }
-        val user = _authUser.value ?: return
         val sqm = areaCents * 40.468564224
         val breakdown = convertAreaFromSqm(sqm)
+        val user = _authUser.value
+        if (user == null) {
+            if (!AuthManager.REQUIRE_SIGN_IN) {
+                val localListing = MarketListing(
+                    id = "local_list_${UUID.randomUUID()}",
+                    userId = LOCAL_PREVIEW_UID,
+                    title = title,
+                    state = _activeState.value,
+                    district = district,
+                    surveyNo = surveyNo,
+                    areaCents = areaCents,
+                    areaSqYards = breakdown.sqYards,
+                    areaAcres = breakdown.acres,
+                    priceInr = priceInr,
+                    sellerName = sellerName.ifBlank { "Surveyor Preview" },
+                    lat = lat,
+                    lng = lng,
+                    photoUri = photoUri,
+                    createdAt = Timestamp.now()
+                )
+                _listings.value = listOf(localListing) + _listings.value
+                _statusBanner.value = "Listing added to Marketplace preview."
+            }
+            return
+        }
         viewModelScope.launch {
             try {
                 marketRepo.createListing(
@@ -685,6 +853,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val sqm = areaCents * 40.468564224
         val breakdown = convertAreaFromSqm(sqm)
+        if (_authUser.value == null && !AuthManager.REQUIRE_SIGN_IN) {
+            _listings.value = _listings.value.map { item ->
+                if (item.id == listingId) {
+                    item.copy(
+                        title = title,
+                        district = district,
+                        surveyNo = surveyNo,
+                        areaCents = areaCents,
+                        areaSqYards = breakdown.sqYards,
+                        areaAcres = breakdown.acres,
+                        priceInr = priceInr
+                    )
+                } else item
+            }
+            _statusBanner.value = "Listing updated."
+            return
+        }
         viewModelScope.launch {
             try {
                 marketRepo.updateListing(
@@ -711,7 +896,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _statusBanner.value = "Marketplace access is disabled for your account."
             return
         }
-        val user = _authUser.value ?: return
+        val user = _authUser.value
+        if (user == null) {
+            if (!AuthManager.REQUIRE_SIGN_IN) {
+                _statusBanner.value = "Listing report recorded in preview session."
+            }
+            return
+        }
         viewModelScope.launch {
             try {
                 marketRepo.reportListing(
@@ -736,7 +927,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _statusBanner.value = "Marketplace access is disabled for your account."
             return
         }
-        val user = _authUser.value ?: return
+        val user = _authUser.value
+        if (user == null) {
+            if (!AuthManager.REQUIRE_SIGN_IN) {
+                _statusBanner.value = "Inquiry recorded in preview session."
+            }
+            return
+        }
         val name = _currentProfile.value?.displayName?.ifBlank { null } ?: user.displayName ?: "Interested Buyer"
         viewModelScope.launch {
             try {
@@ -757,6 +954,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteMarketListing(listingId: String) {
+        if (_authUser.value == null && !AuthManager.REQUIRE_SIGN_IN) {
+            _listings.value = _listings.value.filterNot { it.id == listingId }
+            _statusBanner.value = "Listing deleted."
+            return
+        }
         viewModelScope.launch {
             try {
                 marketRepo.deleteListing(listingId)
@@ -841,7 +1043,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setEpisodeCompleted(episodeId: String, completed: Boolean) {
         if (!hasFeature(AppFeature.VIDEO_ACADEMY)) return
-        val uid = _authUser.value?.uid ?: return
+        val uid = _authUser.value?.uid
+        if (uid == null) {
+            if (!AuthManager.REQUIRE_SIGN_IN) {
+                _completedEpisodeIds.value = if (completed) {
+                    _completedEpisodeIds.value + episodeId
+                } else {
+                    _completedEpisodeIds.value - episodeId
+                }
+            }
+            return
+        }
         viewModelScope.launch {
             try {
                 accountRepo.setEpisodeCompleted(uid, episodeId, completed)
@@ -872,7 +1084,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun submitBugReport(title: String, module: String, severity: String, description: String) {
-        val user = _authUser.value ?: return
+        val user = _authUser.value
+        if (user == null) {
+            if (!AuthManager.REQUIRE_SIGN_IN) {
+                val report = BugReport(
+                    id = "local_bug_${UUID.randomUUID()}",
+                    userId = LOCAL_PREVIEW_UID,
+                    userEmail = "",
+                    userName = "Surveyor Preview",
+                    title = title,
+                    module = module,
+                    severity = severity,
+                    description = description,
+                    createdAt = Timestamp.now()
+                )
+                _allBugReports.value = listOf(report) + _allBugReports.value
+                _statusBanner.value = "Issue report recorded in preview session."
+            }
+            return
+        }
         viewModelScope.launch {
             try {
                 accountRepo.submitBugReport(

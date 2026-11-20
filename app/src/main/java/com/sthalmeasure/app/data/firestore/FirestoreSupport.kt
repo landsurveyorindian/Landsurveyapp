@@ -9,9 +9,16 @@ import com.sthalmeasure.app.R
 import org.json.JSONObject
 
 object FirestoreProvider {
+    @Volatile
+    private var cachedDb: FirebaseFirestore? = null
+
     fun getDb(context: Context): FirebaseFirestore {
-        val dbId = context.getString(R.string.firestore_database_id)
-        return FirebaseFirestore.getInstance(dbId)
+        cachedDb?.let { return it }
+        return synchronized(this) {
+            cachedDb ?: FirebaseFirestore.getInstance(
+                context.applicationContext.getString(R.string.firestore_database_id)
+            ).also { cachedDb = it }
+        }
     }
 }
 

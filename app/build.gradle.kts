@@ -14,13 +14,19 @@ android {
         applicationId = "com.sthalmeasure.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
+        versionCode = 7
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     signingConfigs {
+        create("release") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
         getByName("debug") {
             storeFile = file("${rootDir}/debug.keystore")
             storePassword = "android"
@@ -36,6 +42,7 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
         }
         debug {
             signingConfig = signingConfigs.getByName("debug")

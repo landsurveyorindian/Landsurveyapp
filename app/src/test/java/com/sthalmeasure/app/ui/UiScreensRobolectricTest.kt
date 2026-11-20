@@ -45,10 +45,11 @@ class UiScreensRobolectricTest {
         composeTestRule.onNodeWithTag("register_name_input").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("register_state_dropdown").performScrollTo().assertIsDisplayed()
 
-        // Empty name validation on Register button
+        // Single-character name shows helpful validation hint; blank is optional
+        composeTestRule.onNodeWithTag("register_name_input").performScrollTo().performTextInput("A")
         composeTestRule.onNodeWithTag("register_google_button").performScrollTo().performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithText("Please enter your full name (at least 2 characters) to register.")
+        composeTestRule.onNodeWithText("Please enter at least 2 characters, or leave blank to use your Google name.")
             .performScrollTo()
             .assertIsDisplayed()
 
@@ -318,7 +319,7 @@ class UiScreensRobolectricTest {
     }
 
     @Test
-    fun calculatorScreen_fiveSidedModeComputesAndSavesSummary() {
+    fun calculatorScreen_triangleModeWorksAndFiveSidedIsRemoved() {
         var savedType: String? = null
         var savedSummary = ""
         composeTestRule.setContent {
@@ -335,14 +336,17 @@ class UiScreensRobolectricTest {
             }
         }
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("calc_mode_five_sided").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("calc_mode_five_sided").assertDoesNotExist()
+        composeTestRule.onNodeWithText("5-Sided", substring = true).assertDoesNotExist()
+
+        composeTestRule.onNodeWithTag("calc_mode_triangle").performScrollTo().performClick()
         composeTestRule.waitForIdle()
-        composeTestRule.onNodeWithTag("five_side_a").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("tri_a").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithTag("save_project_button").performScrollTo().performClick()
         composeTestRule.waitForIdle()
 
-        assertEquals("five_sided", savedType)
-        assertTrue(savedSummary.contains("\"parcelType\":\"five_sided\""))
+        assertEquals("triangle", savedType)
+        assertTrue(savedSummary.contains("\"parcelType\":\"triangle\""))
     }
 
     @Test
@@ -510,6 +514,286 @@ class UiScreensRobolectricTest {
             .performScrollTo()
             .assertIsDisplayed()
     }
+
+    @Test
+    fun homeScreen_hidesRoleConsolesForOwnerAndExposesRenamedAndBhuvan2dTiles() {
+        var navigatedRoute: String? = null
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                HomeScreen(
+                    activeState = "Andhra Pradesh",
+                    projectCount = 4,
+                    listingCount = 2,
+                    appRole = com.sthalmeasure.app.data.model.AppRole.OWNER,
+                    onNavigate = { navigatedRoute = it },
+                    onOpenAiAdvisor = {},
+                    onOpenScanner = {},
+                    onOpenAcademy = {},
+                    onOpenBugReport = {}
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("tile_owner_dashboard").assertDoesNotExist()
+        composeTestRule.onNodeWithTag("tile_developer_dashboard").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Role Consoles", substring = true).assertDoesNotExist()
+
+        composeTestRule.onNodeWithText("CAD Drafting Studio").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("GPS Walk Area").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Bhuvan Map 2D").performScrollTo().assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("tile_bhuvan_map_2d").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        assertEquals("bhuvan_2d", navigatedRoute)
+    }
+
+    @Test
+    fun gpsWalkGisAndBhuvan2dScreens_showMapLayersAndMyLocationButtons() {
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                com.sthalmeasure.app.ui.screens.BhuvanMap2DScreen(activeState = "Andhra Pradesh")
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Bhuvan Map 2D (NRSC)").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("map_layer_bhuvan_2d").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("map_layer_google_streets").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bhuvan_my_location_button").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bhuvan_locate_action_button").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun gisAndGpsScreens_displayMapLayersAndCadDraftingStudioCopy() {
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                androidx.compose.foundation.layout.Column {
+                    com.sthalmeasure.app.ui.screens.CadGisScreen(
+                        activeState = "Telangana",
+                        activePolygon = listOf(
+                            com.sthalmeasure.app.domain.CadPoint(0.0, 0.0, "P1"),
+                            com.sthalmeasure.app.domain.CadPoint(20.0, 0.0, "P2"),
+                            com.sthalmeasure.app.domain.CadPoint(20.0, 15.0, "P3")
+                        ),
+                        onApplyToCad = {},
+                        onToast = {}
+                    )
+                }
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("gis_map_container").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("gis_my_location_button").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Load Boundary into CAD Drafting Studio").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun gpsWalkScreen_showsMapLayersAndMyLocationButton() {
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                com.sthalmeasure.app.ui.screens.GpsWalkScreen(
+                    activeState = "Andhra Pradesh",
+                    onDetectedState = {},
+                    onSendToCad = {},
+                    onSaveProject = { _, _, _, _, _ -> }
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("gps_walk_map_container").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("gps_my_location_button").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("map_layer_bhuvan_2d").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("map_layer_google_satellite").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun mainViewModel_defersBackendInitOffFirstComposeFrame() {
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.sthalmeasure.app.ui.viewmodel.MainViewModel(app)
+        assertEquals(false, vm.startupReady.value)
+        assertEquals(null, vm.authUser.value)
+    }
+
+    @Test
+    fun authBypass_requiresNoSignInAndUnlocksAllSurveyingWorkspaces() {
+        assertEquals(false, com.sthalmeasure.app.firebase.AuthManager.REQUIRE_SIGN_IN)
+        val app = androidx.test.core.app.ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.sthalmeasure.app.ui.viewmodel.MainViewModel(app)
+        vm.ensureBackendInitialized(null)
+
+        val deadline = System.currentTimeMillis() + 5_000L
+        while (!vm.startupReady.value && System.currentTimeMillis() < deadline) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            Thread.sleep(20)
+        }
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+
+        assertTrue("Expected startupReady=true in bypass mode", vm.startupReady.value)
+        assertEquals(null, vm.authUser.value)
+        assertEquals(
+            com.sthalmeasure.app.domain.PermissionAccessState.ALLOWED,
+            vm.getFeatureAccessState(com.sthalmeasure.app.domain.AppFeature.PLOT_MEASUREMENT)
+        )
+        assertEquals(
+            com.sthalmeasure.app.domain.PermissionAccessState.ALLOWED,
+            vm.getFeatureAccessState(com.sthalmeasure.app.domain.AppFeature.CAD_TOOLS)
+        )
+        assertEquals(
+            com.sthalmeasure.app.domain.PermissionAccessState.ALLOWED,
+            vm.getFeatureAccessState(com.sthalmeasure.app.domain.AppFeature.GPS_SURVEY)
+        )
+        assertEquals(
+            com.sthalmeasure.app.domain.PermissionAccessState.ALLOWED,
+            vm.getFeatureAccessState(com.sthalmeasure.app.domain.AppFeature.GIS_TOOLS)
+        )
+
+        vm.saveSurveyProject("Preview Plot", "cad", 1000.0, 140.0, "Offline test")
+        assertEquals(1, vm.projects.value.size)
+        val savedId = vm.projects.value.first().id
+        assertEquals("Preview Plot", vm.projects.value.first().name)
+
+        vm.updateProjectNotes(savedId, "Updated Plot", "Telangana", "Edited offline")
+        assertEquals("Updated Plot", vm.projects.value.first().name)
+        assertEquals("Telangana", vm.projects.value.first().state)
+
+        vm.deleteProject(savedId)
+        assertEquals(0, vm.projects.value.size)
+    }
+
+    @Test
+    fun bhuvanMap2d_showsCadastralBoundariesLegendSwitchAndAllStatesDropdown() {
+        var switchedState = ""
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                com.sthalmeasure.app.ui.screens.BhuvanMap2DScreen(
+                    activeState = "Andhra Pradesh",
+                    onSelectState = { switchedState = it }
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("bhuvan_cadastral_legend").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Cadastral Boundaries & FMB Overlay").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Survey / Khasra / Gut Parcel").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithTag("bhuvan_cadastral_switch").performScrollTo().assertIsDisplayed()
+
+        // Open State/UT dropdown and verify multiple Indian states + units are available
+        composeTestRule.onNodeWithTag("bhuvan_state_dropdown").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("bhuvan_state_dropdown_item_pb").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("Punjab", switchedState)
+        composeTestRule.onNodeWithText("Punjab (PB) Cadastral Units (1 Acre Equivalent)")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
+
+    @Test
+    fun calculatorScreen_stateDropdownListsAllIndianStatesAndUpdatesUnits() {
+        var selectedState = ""
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                CalculatorScreen(
+                    activeState = "Andhra Pradesh",
+                    presetSqm = 404.68564224,
+                    onSelectState = { selectedState = it },
+                    onSaveProject = { _, _, _, _, _ -> }
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("calc_mode_converter").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Andhra Pradesh Cadastral Unit Converter").performScrollTo().assertIsDisplayed()
+
+        composeTestRule.onNodeWithTag("calculator_state_dropdown").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("calculator_state_dropdown_item_tn").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+
+        assertEquals("Tamil Nadu", selectedState)
+        composeTestRule.onNodeWithText("Tamil Nadu Cadastral Unit Converter").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun cadGisScreen_switchesCrsZoneToProjectUtmParcelAndShowsExpandButton() {
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                androidx.compose.foundation.layout.Column {
+                    com.sthalmeasure.app.ui.screens.CadGisScreen(
+                        activeState = "Andhra Pradesh",
+                        activePolygon = listOf(
+                            com.sthalmeasure.app.domain.CadPoint(447000.0, 1806000.0, "P1"),
+                            com.sthalmeasure.app.domain.CadPoint(447100.0, 1806000.0, "P2"),
+                            com.sthalmeasure.app.domain.CadPoint(447100.0, 1806100.0, "P3"),
+                            com.sthalmeasure.app.domain.CadPoint(447000.0, 1806100.0, "P4")
+                        ),
+                        onApplyToCad = {},
+                        onToast = {}
+                    )
+                }
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("gis_map_container_expand_button").performScrollTo().assertIsDisplayed().performClick()
+        composeTestRule.waitForIdle()
+
+        // Switch CRS chip to UTM 44N and verify real Pedakakani/Guntur AP coordinates & 10,000 sqm area
+        composeTestRule.onNodeWithTag("gis_crs_chip_utm44").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Active CRS: Active CAD • WGS84 / UTM Zone 44N").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Place: 16.3", substring = true).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun areaSummaryCard_displaysLargeAnkanamAndKmPerimeterCleanly() {
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                com.sthalmeasure.app.ui.screens.AreaSummaryCard(
+                    breakdown = com.sthalmeasure.app.domain.convertAreaFromSqm(3463533.58),
+                    activeState = "Andhra Pradesh",
+                    perimeterMeters = 12345.67,
+                    classificationNote = "Large Parcel Check"
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Perim: 12.35 km").assertIsDisplayed()
+        composeTestRule.onNodeWithText("855.8578").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Ankanam", substring = true).assertIsDisplayed()
+    }
+
+    @Test
+    fun calculatorScreen_autoFitsInvalidDiagonalAndAutoClosesTraverse() {
+        composeTestRule.setContent {
+            SthalMeasureTheme {
+                CalculatorScreen(
+                    activeState = "Andhra Pradesh",
+                    presetSqm = 404.68564224,
+                    onSaveProject = { _, _, _, _, _ -> }
+                )
+            }
+        }
+        composeTestRule.waitForIdle()
+
+        // Make diagonal 150 ft (invalid for 60x40x60x40), then tap error action button to restore valid diagonal
+        composeTestRule.onNodeWithTag("diag_ac_input").performScrollTo().performClick()
+        composeTestRule.onNodeWithTag("diag_ac_input").performTextInput("99")
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("auto_fit_diag_button").performScrollTo().assertIsDisplayed().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Surveyed Area Breakdown").performScrollTo().assertIsDisplayed()
+
+        // Switch to Bowditch Traverse and click Auto-Close to zero out closing error
+        composeTestRule.onNodeWithTag("calc_mode_traverse").performScrollTo().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithTag("traverse_auto_close_button").performScrollTo().assertIsDisplayed().performClick()
+        composeTestRule.waitForIdle()
+        composeTestRule.onNodeWithText("Closing Error: 0.0000 m | Precision: Exact (Closed)")
+            .performScrollTo()
+            .assertIsDisplayed()
+    }
 }
+
 
 

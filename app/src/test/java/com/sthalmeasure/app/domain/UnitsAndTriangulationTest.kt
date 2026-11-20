@@ -90,4 +90,29 @@ class UnitsAndTriangulationTest {
         assertEquals(2.5, shares[1].cents, 0.01)
         assertTrue(abs(shares.sumOf { it.cents } - 10.0) < 0.02)
     }
+
+    @Test
+    fun parseSurveyDouble_andDiagonalSuggestion_handleCommasAndAutoFit() {
+        assertEquals(1250.75, parseSurveyDouble(" 1,250.75 ") ?: 0.0, 1e-6)
+        assertEquals(null, parseSurveyDouble("   "))
+
+        val range = TriangulationEngine.validDiagonalRange(30.0, 40.0, 30.0, 40.0)
+        assertEquals(10.0, range!!.first, 1e-4)
+        assertEquals(70.0, range.second, 1e-4)
+
+        val suggested = TriangulationEngine.suggestDiagonalAC(30.0, 40.0, 30.0, 40.0)
+        assertEquals(50.0, suggested, 1e-4)
+
+        // Blank/zero diagonal automatically uses suggested cyclic/orthogonal diagonal
+        val autoDiagRes = TriangulationEngine.calculateFourSidedPlot(30.0, 40.0, 30.0, 40.0, 0.0)
+        assertTrue(autoDiagRes.isValid)
+        assertEquals(1200.0, autoDiagRes.totalArea, 1e-3)
+        assertEquals(50.0, autoDiagRes.effectiveDiagonalAC, 1e-3)
+
+        // Out-of-range diagonal reports valid bounds and recommended diagonal
+        val outOfRange = TriangulationEngine.calculateFourSidedPlot(30.0, 20.0, 30.0, 20.0, 72.11)
+        assertFalse(outOfRange.isValid)
+        assertEquals(36.0555, outOfRange.suggestedDiagonal, 0.01)
+        assertTrue(outOfRange.errorMessage.orEmpty().contains("Recommended AC: 36.06"))
+    }
 }

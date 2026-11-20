@@ -16,14 +16,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Architecture
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.CloudOff
-import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.FolderCopy
 import androidx.compose.material.icons.filled.GpsFixed
@@ -31,6 +29,7 @@ import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.ImportExport
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayCircle
+import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.AssistChip
@@ -42,6 +41,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -55,6 +58,7 @@ import com.sthalmeasure.app.domain.AppFeature
 import com.sthalmeasure.app.domain.IndianStateUnitsCatalog
 import com.sthalmeasure.app.domain.PermissionAccessState
 import com.sthalmeasure.app.domain.PermissionEvaluator
+import com.sthalmeasure.app.ui.components.IndianStateUnitsDropdown
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -68,13 +72,15 @@ fun HomeScreen(
     featureAccessStates: Map<AppFeature, PermissionAccessState>? = null,
     openBugCount: Int = 0,
     onRetryPermissions: () -> Unit = {},
+    onSelectState: (String) -> Unit = {},
     onNavigate: (String) -> Unit,
     onOpenAiAdvisor: () -> Unit,
     onOpenScanner: () -> Unit,
     onOpenAcademy: () -> Unit,
     onOpenBugReport: () -> Unit
 ) {
-    val stateInfo = IndianStateUnitsCatalog.getStateConfig(activeState)
+    var selectedState by remember(activeState) { mutableStateOf(activeState) }
+    val stateInfo = IndianStateUnitsCatalog.getStateConfig(selectedState)
     val resolvedStates: Map<AppFeature, PermissionAccessState> = when {
         featureAccessStates != null -> featureAccessStates
         effectivePermissions != null -> AppFeature.entries.associateWith { feat ->
@@ -248,6 +254,15 @@ fun HomeScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f)
                 )
+                IndianStateUnitsDropdown(
+                    selectedState = selectedState,
+                    onSelectState = { chosen ->
+                        selectedState = chosen
+                        onSelectState(chosen)
+                    },
+                    label = "Switch State / UT & Cadastral Units (${IndianStateUnitsCatalog.allStates.size})",
+                    dropdownTag = "home_state_dropdown"
+                )
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -263,35 +278,6 @@ fun HomeScreen(
             }
         }
 
-        // Owner & Developer Dedicated Console Access
-        if (appRole == AppRole.OWNER || (appRole == AppRole.DEVELOPER && isFeatEnabled(AppFeature.DEVELOPER_TOOLS))) {
-            Text(
-                text = "Role Consoles (${appRole.label})",
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                if (appRole == AppRole.OWNER) {
-                    WorkspaceTile(
-                        title = "Owner Center",
-                        subtitle = "Feature Controls & Dev Emails",
-                        icon = Icons.Default.AdminPanelSettings,
-                        tag = "tile_owner_dashboard",
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigate("owner") }
-                    )
-                }
-                WorkspaceTile(
-                    title = "Dev Console ($openBugCount)",
-                    subtitle = "Bug Triage & Telemetry",
-                    icon = Icons.Default.DeveloperMode,
-                    tag = "tile_developer_dashboard",
-                    modifier = Modifier.weight(1f),
-                    onClick = { onNavigate("developer") }
-                )
-            }
-        }
-
         // Primary Workspaces Grid
         Text(
             text = "Surveying Workspaces",
@@ -303,7 +289,7 @@ fun HomeScreen(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 WorkspaceTile(
                     title = "Plot Calculator",
-                    subtitle = "4/5-Sided, Heron, Traverse & Units",
+                    subtitle = "4-Sided, Heron, Traverse & Units",
                     icon = Icons.Default.Calculate,
                     tag = "tile_calculator",
                     accessState = accessStateOf(AppFeature.PLOT_MEASUREMENT),
@@ -311,7 +297,7 @@ fun HomeScreen(
                     onClick = { onNavigate("calc") }
                 )
                 WorkspaceTile(
-                    title = "Drafting Studio",
+                    title = "CAD Drafting Studio",
                     subtitle = "COGO, Setback, Split & FMB",
                     icon = Icons.Default.Architecture,
                     tag = "tile_cad",
@@ -322,8 +308,8 @@ fun HomeScreen(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 WorkspaceTile(
-                    title = "GPS Boundary Walk",
-                    subtitle = "Kalman Filter, Outlier Guard & UTM",
+                    title = "GPS Walk Area",
+                    subtitle = "Kalman, Bhuvan & Google Maps",
                     icon = Icons.Default.GpsFixed,
                     tag = "tile_gps",
                     accessState = accessStateOf(AppFeature.GPS_SURVEY),
@@ -332,7 +318,7 @@ fun HomeScreen(
                 )
                 WorkspaceTile(
                     title = "GIS Import / Export",
-                    subtitle = "DXF, GeoJSON, KML & SHP",
+                    subtitle = "DXF, GeoJSON, SHP & Map Layers",
                     icon = Icons.Default.ImportExport,
                     tag = "tile_gis",
                     accessState = accessStateOf(AppFeature.GIS_TOOLS),
@@ -340,6 +326,15 @@ fun HomeScreen(
                     onClick = { onNavigate("gis") }
                 )
             }
+            WorkspaceTile(
+                title = "Bhuvan Map 2D",
+                subtitle = "NRSC 2D Background Layer & My Location",
+                icon = Icons.Default.Public,
+                tag = "tile_bhuvan_map_2d",
+                accessState = accessStateOf(AppFeature.GIS_TOOLS),
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { onNavigate("bhuvan_2d") }
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 WorkspaceTile(
                     title = "Survey Vault ($projectCount)",

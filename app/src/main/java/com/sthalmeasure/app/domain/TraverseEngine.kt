@@ -1,7 +1,9 @@
 package com.sthalmeasure.app.domain
 
+import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
@@ -59,7 +61,40 @@ object TraverseEngine {
         if (!bearingDeg.isFinite()) return 0.0
         var n = bearingDeg % 360.0
         if (n < 0.0) n += 360.0
-        return if (abs(n) < 1e-9) 0.0 else n
+        return if (abs(n) < 1e-9 || abs(n - 360.0) < 1e-9) 0.0 else n
+    }
+
+    /**
+     * Computes the exact closing leg (whole-circle bearing & distance) required
+     * to return the sum of the given [precedingLegs] back to the origin (0, 0).
+     */
+    fun computeClosingLegForPreceding(
+        precedingLegs: List<TraverseStation>,
+        id: String = "${precedingLegs.size + 1}",
+        lineId: String = "Close"
+    ): TraverseStation? {
+        if (precedingLegs.size < 2) return null
+        var sumLat = 0.0
+        var sumDep = 0.0
+        for (stn in precedingLegs) {
+            if (!stn.bearingDeg.isFinite() || !stn.distanceMeters.isFinite() || stn.distanceMeters <= 0.0) {
+                return null
+            }
+            val rad = normalizeBearing(stn.bearingDeg) * PI / 180.0
+            sumLat += stn.distanceMeters * cos(rad)
+            sumDep += stn.distanceMeters * sin(rad)
+        }
+        val closeLat = -sumLat
+        val closeDep = -sumDep
+        val closeDist = hypot(closeLat, closeDep)
+        if (closeDist < 1e-4) return null
+        val closeBearing = normalizeBearing(atan2(closeDep, closeLat) * 180.0 / PI)
+        return TraverseStation(
+            id = id,
+            lineId = lineId,
+            bearingDeg = closeBearing,
+            distanceMeters = closeDist
+        )
     }
 
     fun computeClosedTraverse(
@@ -73,10 +108,10 @@ object TraverseEngine {
         }
         rawStations.forEachIndexed { idx, s ->
             if (!s.distanceMeters.isFinite() || s.distanceMeters <= 0.0) {
-                errors.add("Station ${idx + 1} (${s.lineId}): distance must be > 0.")
+                errors.add("Station ${idx + 1} (${s.lineId}): distance must be a positive number.")
             }
             if (!s.bearingDeg.isFinite()) {
-                errors.add("Station ${idx + 1} (${s.lineId}): bearing must be valid.")
+                errors.add("Station ${idx + 1} (${s.lineId}): bearing must be a valid angle (0°–360°).")
             }
         }
         val emptyArea = convertAreaFromSqm(0.0)
@@ -131,7 +166,11 @@ object TraverseEngine {
 
         val closingError = hypot(sumLat, sumDep)
         val ratio = if (closingError > 1e-6) totalPerimeter / closingError else 999999.0
-        val precisionStr = if (closingError <= 1e-6) "Exact (Closed)" else "1 in ${"%,.0f".format(ratio)}"
+        val precisionStr = if (closingError <= 1e-6) {
+            "Exact (Closed)"
+        } else {
+            String.format(Locale.US, "1 in %,.0f", ratio)
+        }
 
         val grade = when {
             closingError <= 1e-6 || ratio >= 5000.0 -> TraverseQualityGrade.FIRST_ORDER

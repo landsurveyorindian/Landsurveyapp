@@ -154,7 +154,7 @@ fun LoginScreen(
                         ) {
                             Text(
                                 text = portal.label,
-                                style = MaterialTheme.typography.labelLarge.copy(fontSize = 12.sp),
+                                style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp, letterSpacing = (-0.2).sp),
                                 fontWeight = if (activePortal == portal) FontWeight.Bold else FontWeight.Medium,
                                 maxLines = 1,
                                 softWrap = false
@@ -200,7 +200,7 @@ fun LoginScreen(
                 )
                 FeatureRow("36 States & UTs", "Cents, Guntas, Pucca/Kacha Bigha, Kanal, Marla, Ground & Ankanam")
                 FeatureRow("Field Triangulation & Bowditch", "Heron diagonals, Brahmagupta cyclic plots & Traverse closing error")
-                FeatureRow("CAD Studio & GNSS Boundary Walk", "COGO plotting, FMB G-Line ladder, Kalman filter & DXF/GeoJSON I/O")
+                FeatureRow("CAD Drafting Studio & GPS Walk Area", "COGO plotting, FMB G-Line ladder, Kalman filter, Bhuvan 2D & DXF/GeoJSON I/O")
                 FeatureRow("Cloud Vault & AI Scanner", "Private multi-device sync + Gemini ROR / 7-12 document extraction")
             }
         }
@@ -305,7 +305,7 @@ fun RegisterScreen(
                         fullName = it
                         errorMessage = null
                     },
-                    label = { Text("Full Name / Surveyor Name") },
+                    label = { Text("Full Name / Surveyor Name (Optional)") },
                     singleLine = true,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -352,13 +352,14 @@ fun RegisterScreen(
         Button(
             onClick = {
                 if (loading) return@Button
-                if (fullName.trim().length < 2) {
-                    errorMessage = "Please enter your full name (at least 2 characters) to register."
+                val trimmedName = fullName.trim()
+                if (trimmedName.isNotEmpty() && trimmedName.length < 2) {
+                    errorMessage = "Please enter at least 2 characters, or leave blank to use your Google name."
                     return@Button
                 }
                 loading = true
                 errorMessage = null
-                onPrepareRegistration(fullName.trim(), selectedState)
+                onPrepareRegistration(trimmedName, selectedState)
                 scope.launch {
                     when (val res = AuthManager.signInWithGoogle(context)) {
                         is AuthResult.Success -> Unit

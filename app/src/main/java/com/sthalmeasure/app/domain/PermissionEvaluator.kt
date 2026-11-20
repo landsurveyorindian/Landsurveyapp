@@ -14,12 +14,12 @@ enum class AppFeature(
     PLOT_MEASUREMENT(
         key = "plot_measurement",
         label = "Plot Calculator & State Units",
-        subtitle = "4-Sided, 5-Sided, Heron, Bowditch Traverse & 36-State Converter"
+        subtitle = "4-Sided, Heron, Bowditch Traverse & 36-State Converter"
     ),
     GPS_SURVEY(
         key = "gps_survey",
-        label = "GPS Boundary Walk",
-        subtitle = "Fused GNSS Kalman Tracking, Multipath Filter, GCP & UTM"
+        label = "GPS Walk Area",
+        subtitle = "Fused GNSS Kalman Tracking, Bhuvan & Google Map Layers, UTM"
     ),
     CAD_TOOLS(
         key = "cad_tools",
@@ -28,8 +28,8 @@ enum class AppFeature(
     ),
     GIS_TOOLS(
         key = "gis_tools",
-        label = "GIS Import / Export",
-        subtitle = "DXF, GeoJSON, KML & Shapefile ZIP + CRS Validation"
+        label = "GIS Import / Export & Bhuvan 2D",
+        subtitle = "DXF, GeoJSON, KML, Shapefile ZIP & Bhuvan / Google Map Layers"
     ),
     PDF_REPORTS(
         key = "pdf_reports",
@@ -277,7 +277,7 @@ object PermissionEvaluator {
         "calc" -> AppFeature.PLOT_MEASUREMENT
         "cad" -> AppFeature.CAD_TOOLS
         "gps" -> AppFeature.GPS_SURVEY
-        "gis" -> AppFeature.GIS_TOOLS
+        "gis", "bhuvan_2d" -> AppFeature.GIS_TOOLS
         "market" -> AppFeature.MARKETPLACE
         "developer" -> AppFeature.DEVELOPER_TOOLS
         else -> null

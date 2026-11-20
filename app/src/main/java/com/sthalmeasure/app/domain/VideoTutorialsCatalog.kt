@@ -63,7 +63,7 @@ object VideoTutorialsCatalog {
             summary = "Overview of Sthal Measure architecture, regional unit adaptation across 28 states & 8 UTs, and field workflows.",
             steps = listOf(
                 "Select your State Jurisdiction in the top header bar.",
-                "Navigate across Calculators, Drafting Studio, GPS Walk, Import/Export, Projects, and Marketplace.",
+                "Navigate across Calculators, CAD Drafting Studio, GPS Walk Area, Bhuvan Map 2D, Import/Export, Projects, and Marketplace.",
                 "Review regional conversion tables inside the Calculator converter mode."
             ),
             keyTakeaways = listOf(
@@ -81,7 +81,7 @@ object VideoTutorialsCatalog {
             duration = "05:45",
             summary = "Monitor live horizontal GNSS accuracy and activate the Static Epoch Accumulator at boundary stones.",
             steps = listOf(
-                "Open GPS Walk and inspect live WGS84 & UTM Zone readouts.",
+                "Open GPS Walk Area and inspect live WGS84 & UTM Zone readouts.",
                 "Watch Kalman-filtered accuracy converge below ±5m before dropping a vertex.",
                 "Hold stationary at corner pegs for 20-epoch inverse-variance averaging."
             ),
@@ -151,14 +151,14 @@ object VideoTutorialsCatalog {
         TutorialEpisode(
             id = "ep-06",
             number = 6,
-            title = "5-Sided Plots & Triangle Heron Tool",
-            subtitle = "Three-Triangle Penthouse Polygon Subdivision",
+            title = "3-Sided Triangle (Heron) Tool",
+            subtitle = "Exact Three-Side Triangular Subdivision",
             category = "Calculators",
             duration = "05:50",
-            summary = "Survey non-rectangular 3-sided and 5-sided parcels using sequential interior diagonals.",
+            summary = "Survey triangular parcels and irregular triangle corners accurately using Heron's three-side formula.",
             steps = listOf(
-                "Choose 3-Sided Triangle or 5-Sided Pentagon calculator.",
-                "Input all perimeter legs and braces D1, D2.",
+                "Choose the Triangle (Heron) calculator.",
+                "Input Side A, Side B, and Side C in Feet, Meters, or Links.",
                 "Save completed parcel directly to your Firestore Project Vault."
             ),
             keyTakeaways = listOf(
@@ -208,13 +208,13 @@ object VideoTutorialsCatalog {
         TutorialEpisode(
             id = "ep-09",
             number = 9,
-            title = "Drafting Studio: COGO Forward & Inverse",
+            title = "CAD Drafting Studio: COGO Forward & Inverse",
             subtitle = "Precision Bearing-Distance Plotting",
             category = "CAD & GIS",
             duration = "07:20",
             summary = "Draft clean cadastral polygons using Whole Circle Bearings, polar distances, and Quadrantal Bearing readouts.",
             steps = listOf(
-                "Open Drafting Studio -> COGO Panel.",
+                "Open CAD Drafting Studio -> COGO Panel.",
                 "Enter bearing and distance from last corner to add surveyed vertices.",
                 "Inspect live WCB and Quadrantal (N/S-E/W) bearing readouts per segment."
             ),
@@ -252,7 +252,7 @@ object VideoTutorialsCatalog {
             duration = "06:10",
             summary = "Reconstruct rural Indian FMB sub-division sketches from chainage along the G-line baseline and Left/Right offsets.",
             steps = listOf(
-                "Switch to FMB Ladder panel in Drafting Studio.",
+                "Switch to FMB Ladder panel in CAD Drafting Studio.",
                 "Add chainage distance along G-line, perpendicular offset (m), and L/R side.",
                 "Generate closed boundary vertices automatically and export DXF."
             ),
@@ -265,14 +265,14 @@ object VideoTutorialsCatalog {
         TutorialEpisode(
             id = "ep-12",
             number = 12,
-            title = "GPS Boundary Walk & Static Averaging",
+            title = "GPS Walk Area & Static Averaging",
             subtitle = "Live Corner Tagging with Fused Location",
             category = "GPS & Map",
             duration = "07:45",
             summary = "Walk parcel boundaries using Android FusedLocationProviderClient with Kalman smoothing and GCP calibration.",
             steps = listOf(
-                "Grant Precise Location permission on the GPS Walk workspace.",
-                "Tap 'Capture Corner' at each boundary peg or trigger 20-epoch Static Averaging.",
+                "Grant Precise Location permission on the GPS Walk Area workspace.",
+                "Tap 'Capture Corner' at each boundary peg or trigger 10-epoch Static Averaging.",
                 "Apply Ground Control Point (GCP) differential offset if a known benchmark exists."
             ),
             keyTakeaways = listOf(
@@ -284,21 +284,21 @@ object VideoTutorialsCatalog {
         TutorialEpisode(
             id = "ep-13",
             number = 13,
-            title = "ISRO Bhuvan WMS & UTM Grid Reference",
-            subtitle = "LULC, Cadastral & Satellite Layer Configuration",
+            title = "Bhuvan Map 2D NRSC & Google Map Layers",
+            subtitle = "Bhuvan 2D Base Map, LULC, Cadastral & Satellite Switching",
             category = "GPS & Map",
             duration = "05:40",
-            summary = "Inspect Bhuvan WMS endpoint layers, EPSG projections, DMS coordinates, and Easting/Northing UTM grid coordinates.",
+            summary = "Switch smoothly between Bhuvan 2D NRSC and Google Streets/Satellite layers, center on My Location, and inspect UTM coordinates.",
             steps = listOf(
-                "Open the Bhuvan / Coordinate Inspector drawer inside GPS Walk.",
-                "Select regional Bhuvan cadastral or LULC layer preset.",
-                "Copy WGS84 DMS and UTM zone coordinates into your survey notes."
+                "Open Bhuvan Map 2D or select Bhuvan/Google layers inside GPS Walk Area & GIS Import/Export.",
+                "Select NRSC Bhuvan 2D base or LULC/Cadastral/SISDP Village overlay layers.",
+                "Tap My Location to lock coordinates and copy WGS84 DMS and UTM Easting/Northing."
             ),
             keyTakeaways = listOf(
                 "Clean WGS84-to-UTM forward projection built natively in Kotlin.",
-                "Displays live Bhuvan WMS metadata for Andhra Pradesh, Telangana, Maharashtra, and pan-India."
+                "Dedicated Bhuvan Map 2D viewer plus integrated map layers inside GPS Walk Area and GIS I/O."
             ),
-            targetRoute = "gps"
+            targetRoute = "bhuvan_2d"
         ),
         TutorialEpisode(
             id = "ep-14",
@@ -315,7 +315,7 @@ object VideoTutorialsCatalog {
             ),
             keyTakeaways = listOf(
                 "No broad storage permissions required—100% Google Play compliant.",
-                "Load imported polygons directly into Drafting Studio for editing."
+                "Load imported polygons directly into CAD Drafting Studio for editing."
             ),
             targetRoute = "gis"
         ),
@@ -326,10 +326,10 @@ object VideoTutorialsCatalog {
             subtitle = "Google Sign-In & Firestore Multi-Device Sync",
             category = "Projects & Market",
             duration = "05:55",
-            summary = "Persist every calculation, traverse, CAD sketch, and GPS walk in your private Firestore Survey Vault.",
+            summary = "Persist every calculation, traverse, CAD sketch, and GPS Walk Area survey in your private Firestore Survey Vault.",
             steps = listOf(
                 "Sign in with your Google Account via Android Credential Manager.",
-                "Save any survey from Calculator, Drafting Studio, or GPS Walk.",
+                "Save any survey from Calculator, CAD Drafting Studio, or GPS Walk Area.",
                 "Edit project field notes or promote a surveyed plot to the Land Marketplace."
             ),
             keyTakeaways = listOf(

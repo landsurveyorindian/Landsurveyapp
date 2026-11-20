@@ -23,7 +23,6 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Architecture
 import androidx.compose.material.icons.filled.AutoAwesome
@@ -63,7 +62,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -85,17 +83,14 @@ import com.sthalmeasure.app.domain.IndianStateUnitsCatalog
 import com.sthalmeasure.app.domain.PermissionAccessState
 import com.sthalmeasure.app.domain.PermissionEvaluator
 import com.sthalmeasure.app.domain.PlotSummaryCodec
-import com.sthalmeasure.app.firebase.AppCheckHelper
-import com.sthalmeasure.app.firebase.AuthManager
 import com.sthalmeasure.app.report.PdfReportGenerator
 import com.sthalmeasure.app.ui.screens.AcademySheet
 import com.sthalmeasure.app.ui.screens.AiPlotAdvisorSheet
-import com.sthalmeasure.app.ui.screens.AuthFlowHost
+import com.sthalmeasure.app.ui.screens.BhuvanMap2DScreen
 import com.sthalmeasure.app.ui.screens.BugReportSheet
 import com.sthalmeasure.app.ui.screens.CadGisScreen
 import com.sthalmeasure.app.ui.screens.CadStudioScreen
 import com.sthalmeasure.app.ui.screens.CalculatorScreen
-import com.sthalmeasure.app.ui.screens.CompleteRegistrationScreen
 import com.sthalmeasure.app.ui.screens.DeveloperDashboardScreen
 import com.sthalmeasure.app.ui.screens.GpsWalkScreen
 import com.sthalmeasure.app.ui.screens.HomeScreen
@@ -105,7 +100,6 @@ import com.sthalmeasure.app.ui.screens.MarketplaceScreen
 import com.sthalmeasure.app.ui.screens.OwnerControlCenterScreen
 import com.sthalmeasure.app.ui.screens.ProjectsScreen
 import com.sthalmeasure.app.ui.theme.SthalMeasureTheme
-import com.sthalmeasure.app.ui.viewmodel.AuthProfileState
 import com.sthalmeasure.app.ui.viewmodel.MainViewModel
 
 enum class SthalDestination(
@@ -116,7 +110,7 @@ enum class SthalDestination(
     HOME("home", "Home", Icons.Default.Home),
     CALC("calc", "Calc", Icons.Default.Calculate),
     CAD("cad", "CAD", Icons.Default.Architecture),
-    GPS("gps", "GPS", Icons.Default.GpsFixed),
+    GPS("gps", "GPS Area", Icons.Default.GpsFixed),
     GIS("gis", "GIS", Icons.Default.ImportExport),
     PROJECTS("projects", "Vault", Icons.Default.FolderCopy),
     MARKET("market", "Market", Icons.Default.Storefront)
@@ -125,73 +119,33 @@ enum class SthalDestination(
 private const val ROUTE_OWNER = "owner"
 private const val ROUTE_DEVELOPER = "developer"
 private const val ROUTE_INDIVIDUAL_PERMS = "individual_perms"
+private const val ROUTE_BHUVAN_2D = "bhuvan_2d"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // Must configure App Check before any Firebase service call
-        AppCheckHelper.configureAppCheck(this, intent)
         enableEdgeToEdge()
+        super.onCreate(savedInstanceState)
 
         setContent {
             SthalMeasureTheme {
                 val vm: MainViewModel = viewModel()
-                val authUser by vm.authUser.collectAsStateWithLifecycle()
-                val authProfileState by vm.authProfileState.collectAsStateWithLifecycle()
-                val selectedPortal by vm.selectedLoginPortal.collectAsStateWithLifecycle()
-                val registrationBusy by vm.registrationBusy.collectAsStateWithLifecycle()
-                val registrationError by vm.registrationError.collectAsStateWithLifecycle()
+                val startupReady by vm.startupReady.collectAsStateWithLifecycle()
 
                 LaunchedEffect(Unit) {
-                    if (authUser == null) {
-                        AuthManager.trySilentGoogleSignIn(this@MainActivity)
-                    }
+                    vm.ensureBackendInitialized(intent)
                 }
 
-                val user = authUser
-                if (user == null) {
-                    AuthFlowHost(
-                        selectedPortal = selectedPortal,
-                        onSelectPortal = { vm.selectLoginPortal(it) },
-                        onPrepareRegistration = { name, state -> vm.prepareRegistration(name, state) },
-                        onClearPendingRegistration = { vm.clearPendingRegistration() }
-                    )
-                } else {
-                    when (val profileState = authProfileState) {
-                        AuthProfileState.Checking -> {
-                            Box(
-                                modifier = Modifier.fillMaxSize(),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                CircularProgressIndicator()
-                            }
-                        }
-                        is AuthProfileState.NeedsRegistration -> {
-                            CompleteRegistrationScreen(
-                                userEmail = profileState.user.email.orEmpty(),
-                                defaultDisplayName = profileState.user.displayName.orEmpty(),
-                                defaultState = vm.activeState.collectAsStateWithLifecycle().value,
-                                busy = registrationBusy,
-                                errorMessage = registrationError,
-                                onCompleteRegistration = { name, state ->
-                                    vm.completeRegistration(name, state)
-                                },
-                                onSignOut = { vm.signOut() }
-                            )
-                        }
-                        is AuthProfileState.Ready -> {
-                            key(user.uid) {
-                                SthalMainShell(user = user, vm = vm)
-                            }
-                        }
-                        is AuthProfileState.Error -> {
-                            AccountSyncErrorScreen(
-                                message = profileState.message,
-                                onRetry = { vm.retryAccountSync() },
-                                onSignOut = { vm.signOut() }
-                            )
-                        }
+                // Sign-in is strictly disabled until explicitly re-enabled by the user:
+                // launch directly into the full surveying workspace on frame 1 with no auth gate.
+                if (com.sthalmeasure.app.firebase.AuthManager.REQUIRE_SIGN_IN && !startupReady) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator()
                     }
+                } else {
+                    SthalMainShell(user = null, vm = vm)
                 }
             }
         }
@@ -200,7 +154,9 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
+private fun SthalMainShell(user: FirebaseUser?, vm: MainViewModel) {
+    val currentUid = user?.uid ?: MainViewModel.LOCAL_PREVIEW_UID
+    val currentEmail = user?.email.orEmpty()
     val activeState by vm.activeState.collectAsStateWithLifecycle()
     val appRole by vm.appRole.collectAsStateWithLifecycle()
     val currentProfile by vm.currentProfile.collectAsStateWithLifecycle()
@@ -341,32 +297,7 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                     ),
                     title = {
                         Column {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                Text("Sthal Measure", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                                Surface(
-                                    shape = MaterialTheme.shapes.small,
-                                    color = when (appRole) {
-                                        AppRole.OWNER -> MaterialTheme.colorScheme.primary
-                                        AppRole.DEVELOPER -> MaterialTheme.colorScheme.secondary
-                                        AppRole.USER -> MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                                    modifier = Modifier.testTag("header_role_badge")
-                                ) {
-                                    Text(
-                                        text = appRole.label.uppercase(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = when (appRole) {
-                                            AppRole.OWNER -> MaterialTheme.colorScheme.onPrimary
-                                            AppRole.DEVELOPER -> MaterialTheme.colorScheme.onSecondary
-                                            AppRole.USER -> MaterialTheme.colorScheme.onSurfaceVariant
-                                        },
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
+                            Text("Sthal Measure", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Surface(
                                 shape = MaterialTheme.shapes.small,
                                 color = MaterialTheme.colorScheme.primaryContainer,
@@ -417,12 +348,6 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                             ) {
                                 Icon(Icons.Default.AutoAwesome, contentDescription = "AI Plot Advisor")
                             }
-                        }
-                        IconButton(
-                            onClick = { vm.signOut() },
-                            modifier = Modifier.testTag("header_signout_button")
-                        ) {
-                            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = "Sign Out")
                         }
                     }
                 )
@@ -496,6 +421,7 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                                 featureAccessStates = featureAccessStates,
                                 openBugCount = allBugReports.count { it.status == "new" || it.status == "investigating" },
                                 onRetryPermissions = { vm.refreshPermissions() },
+                                onSelectState = { vm.selectState(it) },
                                 onNavigate = { currentRoute = it },
                                 onOpenAiAdvisor = openAiWithPolicy,
                                 onOpenScanner = openScannerWithPolicy,
@@ -505,6 +431,7 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                             SthalDestination.CALC.route -> CalculatorScreen(
                                 activeState = activeState,
                                 presetSqm = converterPresetSqm,
+                                onSelectState = { vm.selectState(it) },
                                 onSaveProject = { name, type, sqm, perim, notes ->
                                     vm.saveSurveyProject(name, type, sqm, perim, notes)
                                 },
@@ -546,6 +473,13 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                                 },
                                 onToast = { vm.postMessage(it) }
                             )
+                            ROUTE_BHUVAN_2D -> BhuvanMap2DScreen(
+                                activeState = activeState,
+                                onSelectState = { vm.selectState(it) },
+                                onDetectedState = { vm.selectState(it) },
+                                onOpenGpsWalkArea = { currentRoute = SthalDestination.GPS.route },
+                                onToast = { vm.postMessage(it) }
+                            )
                             SthalDestination.PROJECTS.route -> ProjectsScreen(
                                 projects = projects,
                                 pdfReportsEnabled = isFeatureAllowed(AppFeature.PDF_REPORTS),
@@ -575,7 +509,7 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                                     if (decoded != null && decoded.points.size >= 3) {
                                         vm.updateDraftingPoints(decoded.points.map { CadPoint(it.x, it.y, it.label) })
                                         currentRoute = SthalDestination.CAD.route
-                                        vm.postMessage("Reopened \"${proj.name}\" (${decoded.points.size} vertices) in Drafting Studio.")
+                                        vm.postMessage("Reopened \"${proj.name}\" (${decoded.points.size} vertices) in CAD Drafting Studio.")
                                     } else {
                                         currentRoute = SthalDestination.CALC.route
                                         vm.postMessage("Loaded \"${proj.name}\" area into State Converter.")
@@ -583,7 +517,7 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                                 }
                             )
                             SthalDestination.MARKET.route -> MarketplaceScreen(
-                                currentUid = user.uid,
+                                currentUid = currentUid,
                                 activeState = activeState,
                                 listings = listings,
                                 sellerInquiries = sellerInquiries,
@@ -609,7 +543,7 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                                 onDeleteListing = { id -> vm.deleteMarketListing(id) }
                             )
                             ROUTE_OWNER -> OwnerControlCenterScreen(
-                                ownerEmail = user.email.orEmpty(),
+                                ownerEmail = currentEmail,
                                 systemSettings = systemSettings,
                                 developerEmails = developerEmails,
                                 allUsers = allUsers,
@@ -636,7 +570,7 @@ private fun SthalMainShell(user: FirebaseUser, vm: MainViewModel) {
                                 onBack = { currentRoute = ROUTE_OWNER }
                             )
                             ROUTE_DEVELOPER -> DeveloperDashboardScreen(
-                                developerEmail = user.email.orEmpty(),
+                                developerEmail = currentEmail,
                                 appRole = appRole,
                                 systemSettings = systemSettings,
                                 developerEmails = developerEmails,
@@ -761,58 +695,6 @@ private fun BlockedStateScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
-            Button(
-                onClick = onSignOut,
-                modifier = Modifier.testTag("${tag}_signout")
-            ) {
-                Text("Sign Out")
-            }
-        }
-    }
-}
-
-@Composable
-private fun AccountSyncErrorScreen(
-    message: String,
-    onRetry: () -> Unit,
-    onSignOut: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp)
-            .testTag("account_sync_error_view"),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.CloudOff,
-                contentDescription = "Account Sync Unavailable",
-                tint = MaterialTheme.colorScheme.error,
-                modifier = Modifier.height(48.dp)
-            )
-            Text("Account Policy Unavailable", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(
-                text = message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
-            Button(
-                onClick = onRetry,
-                modifier = Modifier.testTag("account_sync_retry_button")
-            ) {
-                Text("Retry Policy Sync")
-            }
-            OutlinedButton(
-                onClick = onSignOut,
-                modifier = Modifier.testTag("account_sync_signout_button")
-            ) {
-                Text("Sign Out")
-            }
         }
     }
 }

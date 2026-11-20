@@ -497,13 +497,13 @@ object IndianStateUnitsCatalog {
     }
 
     fun convertSqmToStateUnits(sqm: Double, stateName: String): List<ConvertedUnitValue> {
-        val safeSqm = sqm.coerceAtLeast(0.0)
+        val safeSqm = if (sqm.isFinite()) sqm.coerceAtLeast(0.0) else 0.0
         return getStateConfig(stateName).units.map { unit ->
             val raw = safeSqm / unit.sqm
             val formatted = when {
-                raw >= 1000.0 -> String.format("%,.2f", raw)
-                raw >= 1.0 -> String.format("%.3f", raw).trimEnd('0').trimEnd('.')
-                else -> String.format("%.4f", raw)
+                raw >= 1000.0 -> String.format(java.util.Locale.US, "%,.2f", raw)
+                raw >= 1.0 -> String.format(java.util.Locale.US, "%.3f", raw).trimEnd('0').trimEnd('.')
+                else -> String.format(java.util.Locale.US, "%.4f", raw)
             }
             ConvertedUnitValue(unit = unit, value = raw, formatted = formatted)
         }
@@ -512,6 +512,6 @@ object IndianStateUnitsCatalog {
     fun formatValue(value: Double, decimals: Int = 2): String {
         if (!value.isFinite()) return "0"
         val clean = if (abs(value) < 1e-9) 0.0 else value
-        return String.format("%.${decimals}f", clean)
+        return String.format(java.util.Locale.US, "%.${decimals}f", clean)
     }
 }

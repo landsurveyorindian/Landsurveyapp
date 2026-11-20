@@ -116,7 +116,7 @@ object PdfReportGenerator {
             "gps_walk" -> "Smartphone GNSS Field Boundary Estimate (±consumer GNSS tolerance)"
             "traverse" -> "Closed Compass / Bowditch Computed Traverse"
             "cad" -> "COGO / CAD Drafted Parcel Geometry"
-            "five_sided", "four_sided", "triangle" -> "Geometric Triangulation Measurement"
+            "four_sided", "triangle" -> "Geometric Triangulation Measurement"
             else -> "Calculated Unit Conversion"
         }
         canvas.drawText("Classification: $classification", 50f, y + 15f, bannerTextPaint)

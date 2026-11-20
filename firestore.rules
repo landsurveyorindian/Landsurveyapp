@@ -107,7 +107,7 @@ service cloud.firestore {
              data.state.size() > 0 &&
              data.state.size() <= 80 &&
              data.parcelType is string &&
-             data.parcelType in ['four_sided', 'five_sided', 'triangle', 'traverse', 'cad', 'gps_walk', 'converter'] &&
+             data.parcelType in ['four_sided', 'triangle', 'traverse', 'cad', 'gps_walk', 'converter'] &&
              data.areaSqm is number && data.areaSqm >= 0 &&
              data.areaSqFt is number && data.areaSqFt >= 0 &&
              data.areaSqYards is number && data.areaSqYards >= 0 &&

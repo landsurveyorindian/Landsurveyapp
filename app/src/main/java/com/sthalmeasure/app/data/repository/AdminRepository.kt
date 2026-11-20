@@ -324,8 +324,23 @@ class AdminRepository(
             snap.exists() && (snap.getBoolean("active") == true)
         } catch (e: CancellationException) {
             throw e
+        } catch (e: com.google.firebase.firestore.FirebaseFirestoreException) {
+            if (e.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.PERMISSION_DENIED) {
+                android.util.Log.w("AdminRepository", "Allowlist check denied at $path; resolving as non-developer.")
+                false
+            } else {
+                throw FirestoreErrorHandler.handleFirestoreError(e, OperationType.GET, path)
+            }
         } catch (e: Exception) {
-            throw FirestoreErrorHandler.handleFirestoreError(e, OperationType.GET, path)
+            val mapped = FirestoreErrorHandler.handleFirestoreError(e, OperationType.GET, path)
+            if (mapped.message?.contains("PERMISSION_DENIED", ignoreCase = true) == true ||
+                mapped.message?.contains("Access denied", ignoreCase = true) == true
+            ) {
+                android.util.Log.w("AdminRepository", "Allowlist check denied at $path; resolving as non-developer.")
+                false
+            } else {
+                throw mapped
+            }
         }
     }
 

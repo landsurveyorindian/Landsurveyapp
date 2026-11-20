@@ -37,13 +37,31 @@ fun PlotCanvas(
     splitSegment: Pair<PlotPoint, PlotPoint>? = null,
     showDiagonalAC: Boolean = false,
     unitLabel: String = "m",
-    emptyHint: String = "Enter dimensions or capture points to render parcel geometry"
+    emptyHint: String = "Enter dimensions or capture points to render parcel geometry",
+    multiFeatures: List<List<PlotPoint>> = emptyList(),
+    multiFeaturesClosed: List<Boolean> = emptyList()
 ) {
     val primaryColor = MaterialTheme.colorScheme.primary
     val secondaryColor = MaterialTheme.colorScheme.tertiary
     val borderColor = MaterialTheme.colorScheme.outline
     val surfaceBg = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
     val inkColor = MaterialTheme.colorScheme.onSurface
+
+    val renderFeatures = if (multiFeatures.isNotEmpty()) {
+        multiFeatures.filter { it.size >= 2 }
+    } else if (points.size >= 2) {
+        listOf(points)
+    } else {
+        emptyList()
+    }
+    val renderClosed = if (multiFeatures.isNotEmpty()) {
+        multiFeatures.indices.filter { multiFeatures[it].size >= 2 }
+            .map { idx -> multiFeaturesClosed.getOrElse(idx) { multiFeatures[idx].size >= 3 } }
+    } else if (points.size >= 2) {
+        listOf(points.size >= 3)
+    } else {
+        emptyList()
+    }
 
     Box(
         modifier = modifier
@@ -54,7 +72,7 @@ fun PlotCanvas(
             .border(1.dp, borderColor, RoundedCornerShape(16.dp)),
         contentAlignment = Alignment.Center
     ) {
-        if (points.size < 2) {
+        if (renderFeatures.isEmpty()) {
             Text(
                 text = emptyHint,
                 style = MaterialTheme.typography.bodyMedium,
@@ -64,14 +82,15 @@ fun PlotCanvas(
         }
 
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val allPts = points + secondaryOverlay
+            val featurePoints = renderFeatures.flatten()
+            val allPts = featurePoints + secondaryOverlay
             val minX = allPts.minOf { it.x }
             val maxX = allPts.maxOf { it.x }
             val minY = allPts.minOf { it.y }
             val maxY = allPts.maxOf { it.y }
-            val dx = max(1e-3, maxX - minX)
-            val dy = max(1e-3, maxY - minY)
-            val pad = 34.dp.toPx()
+            val dx = max(1e-6, maxX - minX)
+            val dy = max(1e-6, maxY - minY)
+            val pad = if (featurePoints.size > 60) 18.dp.toPx() else 34.dp.toPx()
             val scale = min((size.width - pad * 2) / dx.toFloat(), (size.height - pad * 2) / dy.toFloat())
             val offX = (size.width - dx.toFloat() * scale) / 2f
             val offY = (size.height - dy.toFloat() * scale) / 2f
@@ -95,23 +114,32 @@ fun PlotCanvas(
                 gy += gridStep
             }
 
-            val mapped = points.map(::mapPt)
+            val totalVerts = featurePoints.size
+            val strokePx = if (totalVerts > 120) 1.5.dp.toPx() else 2.6.dp.toPx()
 
-            // Fill + outline primary polygon
-            if (mapped.size >= 3) {
-                val fillPath = Path().apply {
-                    moveTo(mapped[0].x, mapped[0].y)
-                    for (i in 1 until mapped.size) lineTo(mapped[i].x, mapped[i].y)
-                    close()
+            renderFeatures.forEachIndexed { fIdx, featPts ->
+                val mappedFeat = featPts.map(::mapPt)
+                val isClosed = renderClosed.getOrElse(fIdx) { featPts.size >= 3 }
+                if (mappedFeat.size >= 3 && isClosed) {
+                    val fillPath = Path().apply {
+                        moveTo(mappedFeat[0].x, mappedFeat[0].y)
+                        for (i in 1 until mappedFeat.size) lineTo(mappedFeat[i].x, mappedFeat[i].y)
+                        close()
+                    }
+                    drawPath(fillPath, primaryColor.copy(alpha = 0.14f))
+                    drawPath(fillPath, primaryColor, style = Stroke(width = strokePx))
+                } else if (mappedFeat.size >= 2) {
+                    val linePath = Path().apply {
+                        moveTo(mappedFeat[0].x, mappedFeat[0].y)
+                        for (i in 1 until mappedFeat.size) lineTo(mappedFeat[i].x, mappedFeat[i].y)
+                    }
+                    drawPath(linePath, primaryColor, style = Stroke(width = strokePx))
                 }
-                drawPath(fillPath, primaryColor.copy(alpha = 0.14f))
-                drawPath(fillPath, primaryColor, style = Stroke(width = 2.6.dp.toPx()))
-            } else {
-                drawLine(primaryColor, mapped[0], mapped[1], strokeWidth = 2.6.dp.toPx())
             }
 
-            // Diagonal AC if requested for 4-sided plot
-            if (showDiagonalAC && mapped.size >= 4) {
+            // Single-polygon annotations & diagonal
+            val mapped = renderFeatures.first().map(::mapPt)
+            if (renderFeatures.size == 1 && showDiagonalAC && mapped.size >= 4) {
                 drawLine(
                     color = secondaryColor,
                     start = mapped[0],
@@ -172,8 +200,8 @@ fun PlotCanvas(
                 )
             }
 
-            // Segment length annotations (up to 12 edges to keep clean)
-            if (points.size in 2..12) {
+            // Segment length annotations (up to 12 edges on a single polygon)
+            if (renderFeatures.size == 1 && points.size in 2..12) {
                 for (i in points.indices) {
                     val j = (i + 1) % points.size
                     if (points.size == 2 && i == 1) break
@@ -193,18 +221,23 @@ fun PlotCanvas(
                 }
             }
 
-            // Corner markers & labels
-            mapped.forEachIndexed { idx, offset ->
-                drawCircle(Color.White, radius = 5.dp.toPx(), center = offset)
-                drawCircle(primaryColor, radius = 3.5.dp.toPx(), center = offset)
-                val lbl = points[idx].label.ifBlank { "${idx + 1}" }
-                if (points.size <= 16 || idx == 0 || idx == points.lastIndex) {
-                    drawContext.canvas.nativeCanvas.drawText(
-                        lbl,
-                        offset.x + 8f,
-                        offset.y - 6f,
-                        labelPaint
-                    )
+            // Corner markers & labels (skipped on dense >60-vertex GIS village parcels to prevent clutter)
+            if (totalVerts <= 60) {
+                renderFeatures.forEachIndexed { fIdx, featPts ->
+                    val featMapped = featPts.map(::mapPt)
+                    featMapped.forEachIndexed { idx, offset ->
+                        drawCircle(Color.White, radius = 5.dp.toPx(), center = offset)
+                        drawCircle(primaryColor, radius = 3.5.dp.toPx(), center = offset)
+                        val lbl = featPts[idx].label.ifBlank { "${idx + 1}" }
+                        if (totalVerts <= 16 || (fIdx == 0 && (idx == 0 || idx == featPts.lastIndex))) {
+                            drawContext.canvas.nativeCanvas.drawText(
+                                lbl,
+                                offset.x + 8f,
+                                offset.y - 6f,
+                                labelPaint
+                            )
+                        }
+                    }
                 }
             }
 

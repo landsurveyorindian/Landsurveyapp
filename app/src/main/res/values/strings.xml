@@ -13,8 +13,8 @@
     <string name="sign_out">Sign Out</string>
     <string name="nav_home">Home</string>
     <string name="nav_calc">Calculator</string>
-    <string name="nav_cad">CAD Studio</string>
-    <string name="nav_gps">GPS Walk</string>
+    <string name="nav_cad">CAD Drafting Studio</string>
+    <string name="nav_gps">GPS Walk Area</string>
     <string name="nav_gis">GIS I/O</string>
     <string name="nav_projects">Projects</string>
     <string name="nav_market">Market</string>

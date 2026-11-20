@@ -363,7 +363,7 @@ object CadEngine {
     }
 
     /**
-     * Parses GeoJSON FeatureCollection / Feature / Polygon or simple KML/DXF LWPOLYLINE into CadPoint list.
+     * Parses GeoJSON FeatureCollection / Feature / Polygon or simple KML/DXF entities into flat CadPoint list.
      */
     fun parseImportedGisContent(content: String, extensionHint: String = "geojson"): List<CadPoint> {
         val trimmed = content.trim()
@@ -372,15 +372,25 @@ object CadEngine {
         return when {
             ext.endsWith("geojson") || ext.endsWith("json") || trimmed.startsWith("{") ->
                 parseGeoJsonPolygon(trimmed)
-            ext.endsWith("kml") || trimmed.contains("<coordinates>") ->
+            ext.endsWith("kml") || trimmed.contains("<coordinates>", ignoreCase = true) ->
                 parseKmlCoordinates(trimmed)
-            ext.endsWith("dxf") || trimmed.contains("LWPOLYLINE") || trimmed.contains("POLYLINE") ->
+            ext.endsWith("dxf") || looksLikeDxf(trimmed) ->
                 parseDxfVertices(trimmed)
             else -> emptyList()
         }
     }
 
-    fun parseImportedGisBytes(bytes: ByteArray, fileName: String): GisImportResult {
+    private fun looksLikeDxf(trimmed: String): Boolean {
+        return trimmed.contains("LWPOLYLINE") ||
+            trimmed.contains("POLYLINE") ||
+            (trimmed.contains("SECTION") && trimmed.contains("ENTITIES"))
+    }
+
+    fun parseImportedGisBytes(
+        bytes: ByteArray,
+        fileName: String,
+        stateHint: String = "Andhra Pradesh"
+    ): GisImportResult {
         if (bytes.isEmpty()) {
             return GisImportResult(
                 points = emptyList(),
@@ -392,29 +402,124 @@ object CadEngine {
         val lower = fileName.lowercase()
         val isZipMagic = bytes.size >= 4 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()
         if (lower.endsWith(".zip") || isZipMagic) {
-            return ShapefileSupport.parseShapefileZip(bytes)
+            return ShapefileSupport.parseShapefileZip(bytes, stateHint = stateHint)
         }
-        if (lower.endsWith(".shp")) {
-            return ShapefileSupport.parseShpBytes(bytes)
+        // Check ESRI .shp big-endian magic fileCode == 9994 (0x0000270A) even if SAF URI stripped .shp extension
+        val isShpMagic = bytes.size >= 100 &&
+            bytes[0] == 0x00.toByte() &&
+            bytes[1] == 0x00.toByte() &&
+            bytes[2] == 0x27.toByte() &&
+            bytes[3] == 0x0A.toByte()
+        if (lower.endsWith(".shp") || isShpMagic) {
+            return ShapefileSupport.parseShpBytes(bytes, stateHint = stateHint)
         }
         val text = bytes.decodeToString()
         val trimmed = text.trim()
-        val format = when {
-            lower.endsWith("geojson") || lower.endsWith("json") || trimmed.startsWith("{") -> "GeoJSON"
-            lower.endsWith("kml") || trimmed.contains("<coordinates>", ignoreCase = true) -> "KML"
-            lower.endsWith("dxf") || trimmed.contains("LWPOLYLINE") || trimmed.contains("POLYLINE") -> "AutoCAD DXF"
-            else -> return GisImportResult(
+        return when {
+            lower.endsWith("geojson") || lower.endsWith("json") || trimmed.startsWith("{") -> {
+                val feats = parseGeoJsonFeatures(trimmed)
+                ShapefileSupport.validateImportedFeatures(feats, "GeoJSON", stateHint = stateHint)
+            }
+            lower.endsWith("kml") || trimmed.contains("<coordinates>", ignoreCase = true) -> {
+                val feats = parseKmlFeatures(trimmed)
+                ShapefileSupport.validateImportedFeatures(feats, "KML", stateHint = stateHint)
+            }
+            lower.endsWith("dxf") || looksLikeDxf(trimmed) -> {
+                val dxfParsed = parseDxfWithUnits(trimmed)
+                ShapefileSupport.validateImportedFeatures(
+                    features = dxfParsed.first,
+                    format = "AutoCAD DXF",
+                    stateHint = stateHint,
+                    unitScaleHint = dxfParsed.second
+                )
+            }
+            else -> GisImportResult(
                 points = emptyList(),
                 detectedFormat = "Unsupported",
                 crsLabel = "Unknown",
                 errorMessage = "Unsupported GIS file format ($fileName). Supported formats: GeoJSON, KML, DXF, and Shapefile (.zip/.shp)."
             )
         }
-        val pts = parseImportedGisContent(text, fileName)
-        return ShapefileSupport.validateImportedVertices(pts, format)
     }
 
     fun parseGeoJsonPolygon(json: String): List<CadPoint> {
+        return parseGeoJsonFeatures(json).firstOrNull()?.points ?: emptyList()
+    }
+
+    fun parseGeoJsonFeatures(json: String): List<GisFeature> {
+        return try {
+            val root = org.json.JSONObject(json)
+            val out = mutableListOf<GisFeature>()
+            fun extractCoordsArray(ringArr: org.json.JSONArray, closed: Boolean, isHole: Boolean, lbl: String) {
+                val pts = mutableListOf<CadPoint>()
+                for (i in 0 until ringArr.length()) {
+                    val coord = ringArr.optJSONArray(i) ?: continue
+                    if (coord.length() >= 2) {
+                        val x = coord.optDouble(0, Double.NaN)
+                        val y = coord.optDouble(1, Double.NaN)
+                        if (x.isFinite() && y.isFinite()) {
+                            pts.add(CadPoint(x, y, "P${pts.size + 1}"))
+                        }
+                    }
+                }
+                val cleaned = stripClosingDuplicate(pts)
+                if (cleaned.size >= 2) {
+                    out.add(GisFeature(cleaned, closed = closed && cleaned.size >= 3, isHole = isHole, label = lbl))
+                }
+            }
+            fun visitGeometry(geom: org.json.JSONObject?, lbl: String) {
+                if (geom == null) return
+                val type = geom.optString("type")
+                val coords = geom.optJSONArray("coordinates") ?: return
+                when (type) {
+                    "Polygon" -> {
+                        for (r in 0 until coords.length()) {
+                            val ring = coords.optJSONArray(r) ?: continue
+                            extractCoordsArray(ring, closed = true, isHole = r > 0, lbl = lbl)
+                        }
+                    }
+                    "MultiPolygon" -> {
+                        for (p in 0 until coords.length()) {
+                            val poly = coords.optJSONArray(p) ?: continue
+                            for (r in 0 until poly.length()) {
+                                val ring = poly.optJSONArray(r) ?: continue
+                                extractCoordsArray(ring, closed = true, isHole = r > 0, lbl = lbl)
+                            }
+                        }
+                    }
+                    "LineString" -> extractCoordsArray(coords, closed = false, isHole = false, lbl = lbl)
+                    "MultiLineString" -> {
+                        for (l in 0 until coords.length()) {
+                            val line = coords.optJSONArray(l) ?: continue
+                            extractCoordsArray(line, closed = false, isHole = false, lbl = lbl)
+                        }
+                    }
+                }
+            }
+            when (root.optString("type")) {
+                "FeatureCollection" -> {
+                    val arr = root.optJSONArray("features")
+                    if (arr != null) {
+                        for (i in 0 until arr.length()) {
+                            val f = arr.optJSONObject(i) ?: continue
+                            val name = f.optJSONObject("properties")?.optString("name").orEmpty()
+                            visitGeometry(f.optJSONObject("geometry"), name)
+                        }
+                    }
+                }
+                "Feature" -> {
+                    val name = root.optJSONObject("properties")?.optString("name").orEmpty()
+                    visitGeometry(root.optJSONObject("geometry"), name)
+                }
+                else -> visitGeometry(root, "")
+            }
+            if (out.isNotEmpty()) out else parseGeoJsonFallbackRegex(json)
+        } catch (_: Throwable) {
+            parseGeoJsonFallbackRegex(json)
+        }
+    }
+
+    private fun parseGeoJsonFallbackRegex(json: String): List<GisFeature> {
         val coordIdx = json.indexOf("\"coordinates\"")
         if (coordIdx < 0) return emptyList()
         val tail = json.substring(coordIdx)
@@ -424,49 +529,276 @@ object CadEngine {
             val y = m.groupValues[2].toDoubleOrNull()
             if (x != null && y != null) CadPoint(x, y, "P${idx + 1}") else null
         }.toList()
-        return if (pts.size >= 2 && hypot(pts.first().x - pts.last().x, pts.first().y - pts.last().y) < 1e-7) {
-            pts.dropLast(1)
-        } else pts
+        val cleaned = stripClosingDuplicate(pts)
+        return if (cleaned.size >= 2) listOf(GisFeature(cleaned, closed = cleaned.size >= 3)) else emptyList()
     }
 
     fun parseKmlCoordinates(kml: String): List<CadPoint> {
+        return parseKmlFeatures(kml).firstOrNull()?.points ?: emptyList()
+    }
+
+    fun parseKmlFeatures(kml: String): List<GisFeature> {
         val regex = Regex("<coordinates>([\\s\\S]*?)</coordinates>", RegexOption.IGNORE_CASE)
-        val match = regex.find(kml) ?: return emptyList()
-        val raw = match.groupValues[1].trim()
-        val tokens = raw.split(Regex("\\s+")).filter { it.isNotBlank() }
-        val pts = tokens.mapIndexedNotNull { idx, tok ->
-            val parts = tok.split(",")
-            val x = parts.getOrNull(0)?.toDoubleOrNull()
-            val y = parts.getOrNull(1)?.toDoubleOrNull()
-            if (x != null && y != null) CadPoint(x, y, "K${idx + 1}") else null
+        val out = mutableListOf<GisFeature>()
+        regex.findAll(kml).forEachIndexed { featIdx, match ->
+            val raw = match.groupValues[1].trim()
+            val tokens = raw.split(Regex("\\s+")).filter { it.isNotBlank() }
+            val pts = tokens.mapIndexedNotNull { idx, tok ->
+                val parts = tok.split(",")
+                val x = parts.getOrNull(0)?.toDoubleOrNull()
+                val y = parts.getOrNull(1)?.toDoubleOrNull()
+                if (x != null && y != null) CadPoint(x, y, "K${idx + 1}") else null
+            }
+            val isExplicitlyClosed = pts.size >= 3 &&
+                hypot(pts.first().x - pts.last().x, pts.first().y - pts.last().y) < 1e-6
+            val cleaned = stripClosingDuplicate(pts)
+            val lookbackStart = (match.range.first - 180).coerceAtLeast(0)
+            val surrounding = kml.substring(lookbackStart, match.range.first)
+            val isPolygonTag = surrounding.contains("Polygon", ignoreCase = true) ||
+                surrounding.contains("LinearRing", ignoreCase = true) ||
+                isExplicitlyClosed
+            if (cleaned.size >= 2) {
+                out.add(
+                    GisFeature(
+                        points = cleaned,
+                        closed = isPolygonTag && cleaned.size >= 3,
+                        label = "KML_${featIdx + 1}"
+                    )
+                )
+            }
         }
-        return if (pts.size >= 2 && hypot(pts.first().x - pts.last().x, pts.first().y - pts.last().y) < 1e-7) {
-            pts.dropLast(1)
-        } else pts
+        return out
     }
 
     fun parseDxfVertices(dxf: String): List<CadPoint> {
+        return parseDxfFeatures(dxf).flatMap { it.points }
+    }
+
+    fun parseDxfFeatures(dxf: String): List<GisFeature> {
+        return parseDxfWithUnits(dxf).first
+    }
+
+    private fun parseDxfWithUnits(dxf: String): Pair<List<GisFeature>, Double> {
         val lines = dxf.lines().map { it.trim() }
-        val pts = mutableListOf<CadPoint>()
-        var currentX: Double? = null
-        var inEntity = false
+        var currentSection = ""
+        var inHeaderVarName = ""
+        var insUnitsScale = 1.0
+
+        val features = mutableListOf<GisFeature>()
+        val looseLines = mutableListOf<Pair<CadPoint, CadPoint>>()
+
+        var activeEntityType = ""
+        var currentPolyClosed = false
+        var isPaperSpace = false
+        var currentPolyPts = mutableListOf<CadPoint>()
+        var inOldPolyline = false
+
+        var x10: Double? = null
+        var y20: Double? = null
+        var x11: Double? = null
+        var y21: Double? = null
+
+        fun flushActiveEntity() {
+            when (activeEntityType) {
+                "LWPOLYLINE" -> {
+                    if (!isPaperSpace) {
+                        val closedByCoords = currentPolyPts.size >= 3 &&
+                            hypot(currentPolyPts.first().x - currentPolyPts.last().x, currentPolyPts.first().y - currentPolyPts.last().y) < 1e-3
+                        val cleaned = stripClosingDuplicate(currentPolyPts)
+                        if (cleaned.size >= 2) {
+                            features.add(
+                                GisFeature(
+                                    points = cleaned,
+                                    closed = (currentPolyClosed || closedByCoords) && cleaned.size >= 3
+                                )
+                            )
+                        }
+                    }
+                    currentPolyPts = mutableListOf()
+                    currentPolyClosed = false
+                }
+                "LINE" -> {
+                    if (!isPaperSpace && x10 != null && y20 != null && x11 != null && y21 != null) {
+                        val a = CadPoint(x10!!, y20!!, "L")
+                        val b = CadPoint(x11!!, y21!!, "L")
+                        if (hypot(b.x - a.x, b.y - a.y) > 1e-6) {
+                            looseLines.add(a to b)
+                        }
+                    }
+                }
+                "VERTEX" -> {
+                    if (!isPaperSpace && inOldPolyline && x10 != null && y20 != null) {
+                        currentPolyPts.add(CadPoint(x10!!, y20!!, "V${currentPolyPts.size + 1}"))
+                    }
+                }
+            }
+            x10 = null
+            y20 = null
+            x11 = null
+            y21 = null
+        }
+
+        fun flushOldPolyline() {
+            if (inOldPolyline && !isPaperSpace) {
+                val closedByCoords = currentPolyPts.size >= 3 &&
+                    hypot(currentPolyPts.first().x - currentPolyPts.last().x, currentPolyPts.first().y - currentPolyPts.last().y) < 1e-3
+                val cleaned = stripClosingDuplicate(currentPolyPts)
+                if (cleaned.size >= 2) {
+                    features.add(
+                        GisFeature(
+                            points = cleaned,
+                            closed = (currentPolyClosed || closedByCoords) && cleaned.size >= 3
+                        )
+                    )
+                }
+            }
+            inOldPolyline = false
+            currentPolyPts = mutableListOf()
+            currentPolyClosed = false
+        }
+
+        val hasSectionMarkers = dxf.contains("SECTION") && dxf.contains("ENTITIES")
+        if (!hasSectionMarkers) {
+            currentSection = "ENTITIES"
+        }
+
         var i = 0
         while (i + 1 < lines.size) {
             val code = lines[i]
             val value = lines[i + 1]
             if (code == "0") {
-                inEntity = value == "LWPOLYLINE" || value == "VERTEX" || value == "LINE"
-            } else if (inEntity && code == "10") {
-                currentX = value.toDoubleOrNull()
-            } else if (inEntity && code == "20" && currentX != null) {
-                val y = value.toDoubleOrNull()
-                if (y != null) {
-                    pts.add(CadPoint(currentX, y, "D${pts.size + 1}"))
+                flushActiveEntity()
+                when (value) {
+                    "SECTION" -> {
+                        activeEntityType = ""
+                    }
+                    "ENDSEC" -> {
+                        if (inOldPolyline) flushOldPolyline()
+                        activeEntityType = ""
+                        currentSection = ""
+                    }
+                    "POLYLINE" -> {
+                        if (currentSection == "ENTITIES") {
+                            if (inOldPolyline) flushOldPolyline()
+                            inOldPolyline = true
+                            isPaperSpace = false
+                            currentPolyClosed = false
+                            currentPolyPts = mutableListOf()
+                        }
+                        activeEntityType = value
+                    }
+                    "SEQEND" -> {
+                        if (currentSection == "ENTITIES" && inOldPolyline) {
+                            flushOldPolyline()
+                        }
+                        activeEntityType = ""
+                    }
+                    "LWPOLYLINE", "LINE", "VERTEX" -> {
+                        if (currentSection == "ENTITIES") {
+                            activeEntityType = value
+                            if (value != "VERTEX") {
+                                isPaperSpace = false
+                                currentPolyClosed = false
+                                currentPolyPts = mutableListOf()
+                            }
+                        } else {
+                            activeEntityType = ""
+                        }
+                    }
+                    else -> activeEntityType = ""
                 }
-                currentX = null
+            } else if (code == "2" && activeEntityType.isEmpty() && value in setOf("HEADER", "CLASSES", "TABLES", "BLOCKS", "ENTITIES", "OBJECTS", "THUMBNAILIMAGE")) {
+                currentSection = value
+            } else if (currentSection == "HEADER") {
+                if (code == "9") {
+                    inHeaderVarName = value
+                } else if (inHeaderVarName == "\$INSUNITS" && code == "70") {
+                    val unitCode = value.toIntOrNull() ?: 0
+                    insUnitsScale = when (unitCode) {
+                        1 -> 0.0254 // Inches
+                        2 -> 0.3048 // Feet
+                        4 -> 0.001 // Millimeters
+                        5 -> 0.01 // Centimeters
+                        else -> 1.0
+                    }
+                    inHeaderVarName = ""
+                }
+            } else if (currentSection == "ENTITIES" && activeEntityType.isNotEmpty()) {
+                when (code) {
+                    "67" -> if (value.toIntOrNull() == 1) isPaperSpace = true
+                    "70" -> {
+                        val flags = value.toIntOrNull() ?: 0
+                        if (activeEntityType == "LWPOLYLINE" || activeEntityType == "POLYLINE") {
+                            currentPolyClosed = (flags and 1) != 0
+                        }
+                    }
+                    "10" -> x10 = value.toDoubleOrNull()
+                    "20" -> {
+                        y20 = value.toDoubleOrNull()
+                        if (activeEntityType == "LWPOLYLINE" && x10 != null && y20 != null) {
+                            currentPolyPts.add(CadPoint(x10!!, y20!!, "D${currentPolyPts.size + 1}"))
+                            x10 = null
+                            y20 = null
+                        }
+                    }
+                    "11" -> x11 = value.toDoubleOrNull()
+                    "21" -> y21 = value.toDoubleOrNull()
+                }
             }
             i += 2
         }
-        return pts
+        flushActiveEntity()
+        if (inOldPolyline) flushOldPolyline()
+
+        if (looseLines.isNotEmpty()) {
+            features.addAll(stitchLineSegments(looseLines))
+        }
+        return features to insUnitsScale
+    }
+
+    private fun stripClosingDuplicate(pts: List<CadPoint>): List<CadPoint> {
+        return if (pts.size >= 2 && hypot(pts.first().x - pts.last().x, pts.first().y - pts.last().y) < 1e-6) {
+            pts.dropLast(1)
+        } else {
+            pts
+        }
+    }
+
+    private fun stitchLineSegments(segments: List<Pair<CadPoint, CadPoint>>): List<GisFeature> {
+        if (segments.isEmpty()) return emptyList()
+        val tol = 1e-3
+        fun closePt(a: CadPoint, b: CadPoint): Boolean = hypot(a.x - b.x, a.y - b.y) <= tol
+
+        val remaining = segments.toMutableList()
+        val chains = mutableListOf<GisFeature>()
+        while (remaining.isNotEmpty()) {
+            val seed = remaining.removeAt(0)
+            val chain = mutableListOf(seed.first, seed.second)
+            var extended = true
+            while (extended && remaining.isNotEmpty()) {
+                extended = false
+                val tail = chain.last()
+                val idxTail = remaining.indexOfFirst { closePt(it.first, tail) || closePt(it.second, tail) }
+                if (idxTail >= 0) {
+                    val seg = remaining.removeAt(idxTail)
+                    chain.add(if (closePt(seg.first, tail)) seg.second else seg.first)
+                    extended = true
+                } else {
+                    val head = chain.first()
+                    val idxHead = remaining.indexOfFirst { closePt(it.first, head) || closePt(it.second, head) }
+                    if (idxHead >= 0) {
+                        val seg = remaining.removeAt(idxHead)
+                        chain.add(0, if (closePt(seg.second, head)) seg.first else seg.second)
+                        extended = true
+                    }
+                }
+            }
+            val closed = chain.size >= 4 && closePt(chain.first(), chain.last())
+            val cleaned = stripClosingDuplicate(chain)
+            if (cleaned.size >= 2) {
+                chains.add(GisFeature(points = cleaned, closed = closed && cleaned.size >= 3))
+            }
+        }
+        return chains
     }
 }

@@ -36,6 +36,13 @@ sealed interface AuthResult {
 object AuthManager {
     private const val TAG = "Auth"
 
+    /**
+     * Temporary pre-deployment switch: disables sign-in requirements and auth UI
+     * while all surveying workspaces are being tested. Set to `true` before final
+     * production deployment to re-enable mandatory Google Sign-In & Firestore sync.
+     */
+    const val REQUIRE_SIGN_IN = false
+
     private tailrec fun Context.findActivity(): Activity? = when (this) {
         is Activity -> this
         is ContextWrapper -> baseContext.findActivity()

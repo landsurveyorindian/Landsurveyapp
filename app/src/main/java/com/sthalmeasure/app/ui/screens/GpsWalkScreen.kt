@@ -50,22 +50,18 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import coil.compose.SubcomposeAsyncImage
 import com.google.android.gms.location.LocationCallback
 import com.google.android.gms.location.LocationRequest
 import com.google.android.gms.location.LocationResult
@@ -79,7 +75,12 @@ import com.sthalmeasure.app.domain.GpsSurveySession
 import com.sthalmeasure.app.domain.PlotPoint
 import com.sthalmeasure.app.domain.PlotSummaryCodec
 import com.sthalmeasure.app.domain.convertAreaFromSqm
+import com.sthalmeasure.app.ui.components.BhuvanOverlayLayer
+import com.sthalmeasure.app.ui.components.MapBaseLayer
 import com.sthalmeasure.app.ui.components.PlotCanvas
+import com.sthalmeasure.app.ui.components.SurveyMapConfig
+import com.sthalmeasure.app.ui.components.SurveyMapLayerCard
+import com.sthalmeasure.app.ui.components.rememberMyLocationAction
 import kotlin.math.PI
 import kotlin.math.cos
 
@@ -94,21 +95,8 @@ object GpsFixValidator {
     fun isValidCoordinate(lat: Double, lng: Double, accuracyMeters: Double): Boolean =
         CoordinateValidator.isValidCoordinate(lat, lng, accuracyMeters)
 
-    fun buildBhuvanWmsPreviewUrl(lat: Double, lng: Double, layer: String): String {
-        val wmsLayer = when (layer) {
-            "CADASTRAL_OVERLAY" -> "cadastral:cadastral"
-            "SISDP_VILLAGE" -> "sisdp:village_boundary"
-            else -> "lulc:BR_LULC50K_1112"
-        }
-        val d = 0.0025
-        val minLon = lng - d
-        val minLat = lat - d
-        val maxLon = lng + d
-        val maxLat = lat + d
-        return "https://bhuvan-vec1.nrsc.gov.in/bhuvan/wms?service=WMS&version=1.1.1&request=GetMap" +
-            "&layers=$wmsLayer&styles=&bbox=$minLon,$minLat,$maxLon,$maxLat" +
-            "&width=512&height=384&srs=EPSG:4326&format=image/png&transparent=true"
-    }
+    fun buildBhuvanWmsPreviewUrl(lat: Double, lng: Double, layer: String): String =
+        SurveyMapConfig.buildBhuvanWmsPreviewUrl(lat, lng, layer)
 }
 
 @Composable
@@ -137,10 +125,11 @@ fun GpsWalkScreen(
     val gpsProviderEnabled = locMgr?.isProviderEnabled(LocationManager.GPS_PROVIDER) == true ||
         locMgr?.isProviderEnabled(LocationManager.NETWORK_PROVIDER) == true
 
+    val stateDefaultCenter = remember(activeState) { SurveyMapConfig.stateDefaultCenter(activeState) }
     var lifecycle by remember { mutableStateOf(SurveyWalkLifecycle.STANDBY) }
     var collectingEpochs by remember { mutableStateOf(false) }
-    var filteredLat by remember { mutableDoubleStateOf(0.0) }
-    var filteredLng by remember { mutableDoubleStateOf(0.0) }
+    var filteredLat by remember { mutableDoubleStateOf(stateDefaultCenter.first) }
+    var filteredLng by remember { mutableDoubleStateOf(stateDefaultCenter.second) }
     var filteredAcc by remember { mutableDoubleStateOf(0.0) }
     var outliersRejected by remember { mutableIntStateOf(0) }
     var weakFixesSkipped by remember { mutableIntStateOf(0) }
@@ -148,11 +137,27 @@ fun GpsWalkScreen(
 
     var epochCount by remember { mutableIntStateOf(0) }
     var hasFix by remember { mutableStateOf(false) }
-    var bhuvanLayer by remember { mutableStateOf("BHUVAN_LULC_50K") }
-    var showBhuvanPreview by remember { mutableStateOf(false) }
+    var selectedBaseLayer by remember { mutableStateOf(MapBaseLayer.BHUVAN_HYBRID) }
+    var selectedOverlayLayer by remember { mutableStateOf(BhuvanOverlayLayer.CADASTRAL) }
+    var manualCenter by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var gcpCalibration by remember { mutableStateOf<GcpCalibration?>(null) }
     var showGcpDialog by remember { mutableStateOf(false) }
-    var projectName by remember { mutableStateOf("GNSS Boundary Walk") }
+    var projectName by remember { mutableStateOf("GPS Walk Area") }
+
+    val (locatingMyPos, triggerMyLocation) = rememberMyLocationAction(
+        onLocationFound = { lat, lng, acc ->
+            manualCenter = lat to lng
+            if (!hasFix) {
+                filteredLat = lat
+                filteredLng = lng
+                filteredAcc = acc
+            }
+            lastAlertNote = "My Location centered (±${acc.toInt()} m)"
+        },
+        onLocationError = { msg ->
+            lastAlertNote = msg
+        }
+    )
 
     val surveySession = remember { GpsSurveySession(epochTargetCount = 10) }
     val boundaryPts = remember { mutableStateListOf<Pair<Double, Double>>() }
@@ -223,7 +228,7 @@ fun GpsWalkScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(horizontal = 8.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         if (!hasPermission) {
@@ -279,7 +284,7 @@ fun GpsWalkScreen(
                 Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("GNSS Status: ${lifecycle.label}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text("GPS Walk Area • ${lifecycle.label}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Text(
                                 "Outliers Rejected: $outliersRejected • Weak Skipped: $weakFixesSkipped",
                                 style = MaterialTheme.typography.labelSmall,
@@ -429,69 +434,37 @@ fun GpsWalkScreen(
             }
         }
 
-        // ISRO Bhuvan WMS Layer Reference & Overlay Preview
-        Surface(
-            shape = MaterialTheme.shapes.medium,
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Icon(Icons.Default.Layers, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        Text("ISRO Bhuvan WMS ($activeState)", style = MaterialTheme.typography.labelLarge)
-                    }
-                    FilterChip(
-                        selected = showBhuvanPreview,
-                        onClick = { showBhuvanPreview = !showBhuvanPreview },
-                        label = { Text(if (showBhuvanPreview) "Overlay ON" else "Preview Tile") }
-                    )
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("BHUVAN_LULC_50K", "CADASTRAL_OVERLAY", "SISDP_VILLAGE").forEach { layer ->
-                        FilterChip(
-                            selected = bhuvanLayer == layer,
-                            onClick = { bhuvanLayer = layer },
-                            label = { Text(layer.replace("_", " "), style = MaterialTheme.typography.labelSmall) }
-                        )
-                    }
-                }
-                val centerLat = boundaryPts.firstOrNull()?.first ?: filteredLat.takeIf { hasFix }
-                val centerLng = boundaryPts.firstOrNull()?.second ?: filteredLng.takeIf { hasFix }
-                if (showBhuvanPreview && centerLat != null && centerLng != null) {
-                    val tileUrl = GpsFixValidator.buildBhuvanWmsPreviewUrl(centerLat, centerLng, bhuvanLayer)
-                    Box(modifier = Modifier.fillMaxWidth().height(200.dp)) {
-                        SubcomposeAsyncImage(
-                            model = tileUrl,
-                            contentDescription = "Bhuvan WMS Tile Preview",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().alpha(0.65f),
-                            error = {
-                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                    Text(
-                                        "Bhuvan WMS tile unavailable offline or blocked by NRSC server; local parcel geometry shown above.",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        modifier = Modifier.padding(16.dp)
-                                    )
-                                }
-                            }
-                        )
-                        PlotCanvas(
-                            points = localPlotPoints,
-                            canvasHeight = 200.dp,
-                            unitLabel = "m",
-                            emptyHint = "Bhuvan tile center: ${"%.4f".format(centerLat)}, ${"%.4f".format(centerLng)}"
-                        )
-                    }
-                }
-            }
+        // Interactive Bhuvan 2D & Google Maps Layer Selector with My Location
+        val mapCenterLat = manualCenter?.first
+            ?: filteredLat.takeIf { hasFix }
+            ?: boundaryPts.firstOrNull()?.first
+            ?: stateDefaultCenter.first
+        val mapCenterLng = manualCenter?.second
+            ?: filteredLng.takeIf { hasFix }
+            ?: boundaryPts.firstOrNull()?.second
+            ?: stateDefaultCenter.second
+        val liveMarkerLatLng = when {
+            hasFix -> filteredLat to filteredLng
+            else -> manualCenter
         }
+
+        SurveyMapLayerCard(
+            title = "GPS Walk Area Map Layers",
+            activeState = activeState,
+            baseLayer = selectedBaseLayer,
+            onSelectBaseLayer = { selectedBaseLayer = it },
+            overlayLayer = selectedOverlayLayer,
+            onSelectOverlayLayer = { selectedOverlayLayer = it },
+            centerLat = mapCenterLat,
+            centerLng = mapCenterLng,
+            myLocation = liveMarkerLatLng,
+            polygonLatLngs = boundaryPts.toList(),
+            locating = locatingMyPos,
+            onMyLocationClick = triggerMyLocation,
+            myLocationButtonTag = "gps_my_location_button",
+            mapContainerTag = "gps_walk_map_container",
+            mapHeight = 320.dp
+        )
 
         PlotCanvas(
             points = localPlotPoints,
@@ -552,13 +525,13 @@ fun GpsWalkScreen(
                 OutlinedTextField(
                     value = projectName,
                     onValueChange = { projectName = it },
-                    label = { Text("Walk Project Title") },
+                    label = { Text("GPS Walk Area Title") },
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
                 Button(
                     onClick = {
-                        val notesText = "${boundaryPts.size} GNSS vertices | Bhuvan layer: $bhuvanLayer | Outliers filtered: $outliersRejected"
+                        val notesText = "${boundaryPts.size} GNSS vertices | Map: ${selectedBaseLayer.label} / ${selectedOverlayLayer.label} | Outliers filtered: $outliersRejected"
                         if (onSaveProjectWithSummary != null) {
                             onSaveProjectWithSummary(
                                 projectName,

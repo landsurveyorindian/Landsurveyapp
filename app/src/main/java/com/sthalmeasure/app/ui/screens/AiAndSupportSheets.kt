@@ -615,7 +615,7 @@ fun BugReportSheet(
                 modifier = Modifier.fillMaxWidth()
             )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                listOf("Calculator", "CAD Studio", "GPS Walk", "GIS I/O", "Marketplace").forEach { m ->
+                listOf("Calculator", "CAD Drafting Studio", "GPS Walk Area", "GIS I/O", "Bhuvan Map 2D", "Marketplace").forEach { m ->
                     FilterChip(selected = module == m, onClick = { module = m }, label = { Text(m) })
                 }
             }
